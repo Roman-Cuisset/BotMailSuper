@@ -5,7 +5,6 @@ from utils.i18n import tr
 from utils.email_sender import send_email_async, log_action
 from database.db import get_db
 from datetime import datetime
-from handlers.account import finish_connect_callback
 from collections import defaultdict, deque
 from time import monotonic
 from config import MAX_MESSAGES_PER_MINUTE
@@ -30,10 +29,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     await query.answer()
-
-    if query.data == "finish_connect":
-        await finish_connect_callback(update, context)
-        return
 
     if query.data.startswith("htmltpl:"):
         from handlers.html_templates import handle_html_template_callback

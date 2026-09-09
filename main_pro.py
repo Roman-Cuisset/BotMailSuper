@@ -11,13 +11,6 @@ from telegram.error import TelegramError
 from config import LOG_FILE
 from database.db import init_db
 from handlers.callbacks import button_handler
-from handlers.account import (
-    connect_gmail_command,
-    finish_connect_callback,
-    my_emails_command, 
-    set_default_email_command, 
-    delete_email_command
-)
 from utils.i18n import load_translations, tr
 from utils.email_sender import log_action, email_worker
 from utils.scheduler import scheduled_email_worker
@@ -119,11 +112,6 @@ def main():
     app.add_handler(CommandHandler("feedback", feedback_command))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
-    # Account Handlers (Phase 2)
-    app.add_handler(CommandHandler("connect", connect_gmail_command))
-    app.add_handler(CommandHandler("myemails", my_emails_command))
-    app.add_handler(CommandHandler("setdefault", set_default_email_command))
-    app.add_handler(CommandHandler("deleteemail", delete_email_command))
     app.add_handler(CommandHandler("savedraft", savedraft_command))
     app.add_handler(CommandHandler("drafts", drafts_command))
     app.add_handler(CommandHandler("senddraft", senddraft_command))

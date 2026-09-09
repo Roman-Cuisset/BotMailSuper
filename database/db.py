@@ -162,7 +162,6 @@ def init_db():
                 email_address TEXT NOT NULL,
                 label TEXT DEFAULT '',
                 encrypted_password TEXT DEFAULT '',
-                auth_data TEXT DEFAULT '',
                 is_primary BOOLEAN DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,

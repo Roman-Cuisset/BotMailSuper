@@ -13,26 +13,17 @@ from database.db import get_db
 import smtplib
 from email.message import EmailMessage
 from dotenv import load_dotenv
-from utils.smtp_exclusion_utils import is_smtp_excluded
 
 load_dotenv("secrets.env")
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", EMAIL_SENDER)
-USE_GMAIL_API = os.getenv("USE_GMAIL_API", "True").lower() == "true"
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Import Gmail API if enabled
-if USE_GMAIL_API:
-    try:
-        from utils.gmail_api import send_email_via_gmail_api
-        logger.info("✅ Gmail API module loaded for reports")
-    except ImportError as e:
-        logger.warning(f"⚠️ Gmail API not available: {e}. Using SMTP only.")
-        USE_GMAIL_API = False
 
 def get_weekly_stats():
     """Get statistics for the past week"""
@@ -152,32 +143,7 @@ def send_weekly_report():
         subject = f"📊 Rapport Hebdomadaire - {stats['week_start']} au {stats['week_end']}"
         text_body = "Rapport hebdomadaire du Bot Mail Super"
         
-        # Try Gmail API first if enabled AND admin email not excluded
-        if USE_GMAIL_API and not is_smtp_excluded(ADMIN_EMAIL):
-            try:
-                logger.info(f"📧 Sending weekly report via Gmail API to {ADMIN_EMAIL}...")
-                success = send_email_via_gmail_api(
-                    to_address=ADMIN_EMAIL,
-                    subject=subject,
-                    body_text=text_body,
-                    body_html=html,
-                    attachments=[],
-                    sender_email=EMAIL_SENDER
-                )
-                
-                if success:
-                    print(f"✅ Weekly report sent via Gmail API to {ADMIN_EMAIL}")
-                    return True
-                else:
-                    logger.warning("⚠️ Gmail API failed, falling back to SMTP")
-            except Exception as e:
-                logger.warning(f"⚠️ Gmail API error: {e}, falling back to SMTP")
-        
-        # Fallback to SMTP
-        if is_smtp_excluded(ADMIN_EMAIL):
-            logger.info(f"📧 Envoi rapport hebdomadaire via SMTP à {ADMIN_EMAIL} (dans liste d'exclusion)...")
-        else:
-            logger.info(f"📧 Sending weekly report via SMTP to {ADMIN_EMAIL}...")
+        logger.info(f"📧 Sending weekly report via SMTP to {ADMIN_EMAIL}...")
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = EMAIL_SENDER
@@ -186,7 +152,7 @@ def send_weekly_report():
         msg.set_content(text_body)
         msg.add_alternative(html, subtype='html')
         
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as smtp:
             smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
             smtp.send_message(msg)
         
