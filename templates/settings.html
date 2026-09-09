@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <!-- Password Settings -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-lock me-2 text-primary"></i>Security</h5>
+            </div>
+            <div class="card-body">
+                <div class="settings-section">
+                    <h6>Change Admin Password</h6>
+                    {% if password_msg %}
+                    <div class="alert alert-{{ 'success' if password_success else 'danger' }} alert-dismissible fade show py-2"
+                        role="alert">
+                        <small>{{ password_msg }}</small>
+                        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"
+                            style="padding:.65rem;"></button>
+                    </div>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('settings') }}">
+                        <input type="hidden" name="action" value="change_password">
+                        <div class="mb-3">
+                            <label for="old_password" class="form-label fw-semibold" style="font-size:.85rem;">Current
+                                Password</label>
+                            <div class="input-group">
+                                <input type="password" name="old_password" id="old_password" class="form-control"
+                                    required>
+                                <button class="btn btn-outline-secondary" type="button"
+                                    onclick="togglePassword('old_password')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label fw-semibold" style="font-size:.85rem;">New
+                                Password</label>
+                            <div class="input-group">
+                                <input type="password" name="new_password" id="new_password" class="form-control"
+                                    required>
+                                <button class="btn btn-outline-secondary" type="button"
+                                    onclick="togglePassword('new_password')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Change Password
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Settings -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-download me-2 text-primary"></i>Data Export</h5>
+            </div>
+            <div class="card-body">
+                <div class="settings-section">
+                    <h6>Export Data to CSV</h6>
+                    <p class="text-muted" style="font-size:.875rem;">Download your data in CSV format for backup or
+                        analysis.</p>
+                    <div class="d-flex flex-column gap-2">
+                        <a href="{{ url_for('export_csv', what='vip') }}" class="btn btn-outline-success text-start">
+                            <i class="fas fa-crown me-2"></i> Export VIP Users
+                        </a>
+                        <a href="{{ url_for('export_csv', what='blacklist') }}"
+                            class="btn btn-outline-danger text-start">
+                            <i class="fas fa-ban me-2"></i> Export Blacklist
+                        </a>
+                        <a href="{{ url_for('export_csv', what='logs') }}" class="btn btn-outline-info text-start">
+                            <i class="fas fa-file-alt me-2"></i> Export Logs
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mt-0">
+    <!-- System Information -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2 text-primary"></i>System Info</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted" style="width:45%;font-size:.875rem;">Session Timeout</td>
+                            <td style="font-size:.875rem;">{{ session_timeout }}s ({{ (session_timeout / 60) | int }}
+                                min)</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted" style="font-size:.875rem;">Admin Status</td>
+                            <td><span class="badge bg-success">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted" style="font-size:.875rem;">Database</td>
+                            <td style="font-size:.875rem;">SQLite <code>bot.db</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-tools me-2 text-primary"></i>Maintenance</h5>
+            </div>
+            <div class="card-body">
+                <div class="settings-section">
+                    <h6>Clear System Logs</h6>
+                    <p class="text-muted" style="font-size:.875rem;">Remove all log entries to free up space.</p>
+                    <form method="post" action="{{ url_for('clear_logs') }}"
+                        onsubmit="return confirm('Are you sure you want to clear all logs? This action cannot be undone.');">
+                        <button type="submit" class="btn btn-outline-danger">
+                            <i class="fas fa-trash me-1"></i> Clear All Logs
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function togglePassword(fieldId) {
+        const input = document.getElementById(fieldId);
+        const icon = event.currentTarget.querySelector('i');
+
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        } else {
+            input.type = 'password';
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    }
+</script>
+{% endblock %}

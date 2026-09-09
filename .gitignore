@@ -1,0 +1,63 @@
+# Credentials and tokens (sensitive files)
+credentials.json
+token.json
+token.pickle
+secrets.env
+cookies.txt
+credentials*.json
+TELEGRAM.txt
+web_admin_*backup.py
+web_admin_sqlite.py
+IA/
+
+# Runtime data and personal information
+history.json
+users.json
+user_lang.json
+vip_users.json
+blacklist.json
+smtp_exclusions.json
+TelegramMailBotFiles/
+telechargements_telegram/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+bot_log.txt
+log.txt
+filtered_bot_log.txt
+
+# Database
+bot.db
+*.db
+
+# Session files
+*.session
+
+# Temporary files
+*.tmp
+*.bak
+test_email_output.html
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Deployment
+bot_deploy.zip

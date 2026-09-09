@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: telegram_mail_bot
+    restart: always
+    volumes:
+      - ./bot.db:/app/bot.db
+      - ./bot_log.txt:/app/bot_log.txt
+      - ./TelegramMailBotFiles:/app/TelegramMailBotFiles
+    env_file:
+      - secrets.env

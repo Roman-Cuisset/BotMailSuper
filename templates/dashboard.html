@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Overview{% endblock %}
+
+{% block content %}
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-primary text-white">
+            <div class="card-body py-3 px-3">
+                <h5 class="card-title mb-1">Total Users</h5>
+                <h2 class="display-4 mb-1">{{ stats.total_users }}</h2>
+                <p class="mb-0"><i class="fas fa-arrow-up"></i> {{ stats.new_users_today }} today</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-success text-white">
+            <div class="card-body py-3 px-3">
+                <h5 class="card-title mb-1">Emails Sent</h5>
+                <h2 class="display-4 mb-1">{{ stats.total_emails }}</h2>
+                <p class="mb-0"><i class="fas fa-paper-plane"></i> {{ stats.emails_today }} today</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-warning text-dark">
+            <div class="card-body py-3 px-3">
+                <h5 class="card-title mb-1">VIP Users</h5>
+                <h2 class="display-4 mb-1">{{ stats.vip_users }}</h2>
+                <p class="mb-0"><i class="fas fa-crown"></i> Premium</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-info text-white">
+            <div class="card-body py-3 px-3">
+                <h5 class="card-title mb-1">Active Today</h5>
+                <h2 class="display-4 mb-1">{{ stats.active_today }}</h2>
+                <p class="mb-0"><i class="fas fa-bolt"></i> Online</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart + Recent Actions -->
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line me-2" style="color:var(--color-primary)"></i>Activity — Last 7 Days</h5>
+            </div>
+            <div class="card-body" style="padding:1rem 1.15rem;">
+                <canvas id="activityChart" height="90"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="fas fa-clock me-2" style="color:var(--color-primary)"></i>Recent Actions</h5>
+            </div>
+            <div class="card-body p-0" style="max-height:370px; overflow-y:auto;">
+                <ul class="list-group list-group-flush">
+                    {% for log in recent_logs %}
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="text-muted" style="font-size:.7rem;">{{ log.time }}</small>
+                            <span class="badge bg-light text-dark border" style="font-size:.65rem;">{{ log.user
+                                }}</span>
+                        </div>
+                        <div class="recent-action-text">{{ log.action }}</div>
+                    </li>
+                    {% endfor %}
+                    {% if not recent_logs %}
+                    <li class="list-group-item text-center text-muted py-4">
+                        <i class="fas fa-inbox d-block mb-2" style="font-size:1.25rem; opacity:.4;"></i>
+                        <small>No recent activity</small>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<div id="chart-data-container" data-labels='{{ chart_labels | tojson | safe }}'
+    data-values='{{ chart_data | tojson | safe }}' style="display:none;"></div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const dc = document.getElementById('chart-data-container');
+        const labels = JSON.parse(dc.dataset.labels);
+        const values = JSON.parse(dc.dataset.values);
+        const ctx = document.getElementById('activityChart').getContext('2d');
+
+        const grad = ctx.createLinearGradient(0, 0, 0, 280);
+        grad.addColorStop(0, 'rgba(99,102,241,.18)');
+        grad.addColorStop(1, 'rgba(99,102,241,0)');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Emails',
+                    data: values,
+                    borderColor: '#6366f1',
+                    borderWidth: 2.5,
+                    tension: .4,
+                    fill: true,
+                    backgroundColor: grad,
+                    pointBackgroundColor: '#6366f1',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9' },
+                        ticks: { color: '#94a3b8', font: { size: 11 } }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', font: { size: 11 } }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

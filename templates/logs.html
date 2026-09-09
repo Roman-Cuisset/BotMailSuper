@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}System Logs{% endblock %}
+
+{% block content %}
+<div class="card h-100">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-terminal me-2 text-primary"></i>System Logs</h5>
+        <div class="d-flex gap-2">
+            <form method="post" action="{{ url_for('clear_logs') }}" class="d-inline"
+                onsubmit="return confirm('Are you sure you want to clear all logs?');">
+                <button class="btn btn-outline-danger btn-sm">
+                    <i class="fas fa-trash me-1"></i> Clear
+                </button>
+            </form>
+            <a href="{{ url_for('export_csv', what='logs') }}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-download me-1"></i> Export
+            </a>
+            <button class="btn btn-light btn-sm border" onclick="location.reload()">
+                <i class="fas fa-sync"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="bg-dark text-light p-3 font-monospace"
+            style="height: 72vh; overflow-y: auto; white-space: pre-wrap; font-size: 0.8rem; line-height: 1.6;"
+            id="logContainer">
+            {% if logs %}
+            {{ logs }}
+            {% else %}
+            <span class="text-secondary"><i class="fas fa-inbox me-2"></i>No logs available.</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-scroll to bottom
+    var logContainer = document.getElementById('logContainer');
+    logContainer.scrollTop = logContainer.scrollHeight;
+</script>
+{% endblock %}

@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}User Management{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-users me-2" style="color:var(--color-primary)"></i>Users List</h5>
+        <div class="d-flex gap-2">
+            <form class="d-flex" method="get">
+                <input class="form-control form-control-sm me-2" type="search" name="search"
+                    placeholder="Search ID/Note" value="{{ search }}" style="min-width:180px;">
+                <button class="btn btn-sm btn-outline-primary" type="submit">
+                    <i class="fas fa-search"></i>
+                </button>
+            </form>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                <i class="fas fa-plus me-1"></i> Add User
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Username</th>
+                        <th>Status</th>
+                        <th>Note</th>
+                        <th style="width:140px; text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><code>{{ user.user_id }}</code></td>
+                        <td>
+                            {% if user.username %}
+                            <a href="https://t.me/{{ user.username }}" target="_blank" class="text-decoration-none">@{{
+                                user.username }}</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_vip %}
+                            <span class="badge bg-success"><i class="fas fa-crown me-1"></i>VIP</span>
+                            {% endif %}
+                            {% if user.is_blacklisted %}
+                            <span class="badge bg-danger"><i class="fas fa-ban me-1"></i>Banned</span>
+                            {% endif %}
+                            {% if not user.is_vip and not user.is_blacklisted %}
+                            <span class="badge bg-light text-dark border">Regular</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="text-muted" style="cursor:pointer;"
+                                onclick="editUser({{ user.user_id }}, '{{ user.note|default("", true)|e }}')"
+                                title="Click to edit">
+                                {{ user.note or '—' }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <div class="action-btns">
+                                {% if not user.is_vip %}
+                                <form method="post" action="{{ url_for('update_user') }}" class="d-inline">
+                                    <input type="hidden" name="user_id" value="{{ user.user_id }}">
+                                    <input type="hidden" name="action" value="add_vip">
+                                    <button class="action-btn action-btn--success" title="Make VIP">
+                                        <i class="fas fa-crown"></i>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <form method="post" action="{{ url_for('update_user') }}" class="d-inline">
+                                    <input type="hidden" name="user_id" value="{{ user.user_id }}">
+                                    <input type="hidden" name="action" value="del_vip">
+                                    <button class="action-btn action-btn--warning" title="Remove VIP">
+                                        <i class="fas fa-minus-circle"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+
+                                {% if not user.is_blacklisted %}
+                                <form method="post" action="{{ url_for('update_user') }}" class="d-inline">
+                                    <input type="hidden" name="user_id" value="{{ user.user_id }}">
+                                    <input type="hidden" name="action" value="ban">
+                                    <button class="action-btn action-btn--danger" title="Ban User">
+                                        <i class="fas fa-ban"></i>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <form method="post" action="{{ url_for('update_user') }}" class="d-inline">
+                                    <input type="hidden" name="user_id" value="{{ user.user_id }}">
+                                    <input type="hidden" name="action" value="unban">
+                                    <button class="action-btn action-btn--muted" title="Unban User">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+
+                                <button class="action-btn action-btn--primary"
+                                    onclick="editUser({{ user.user_id }}, '{{ user.note|default("", true)|e }}')"
+                                    title="Edit Note">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not users %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">
+                            <i class="fas fa-users-slash mb-2 d-block" style="font-size:1.5rem;"></i>
+                            No users found
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i>Add New User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{{ url_for('update_user') }}">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="add_user">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">User ID</label>
+                        <input type="number" name="user_id" class="form-control" required
+                            placeholder="Telegram User ID">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Note</label>
+                        <input type="text" name="note" class="form-control" placeholder="Optional note">
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_vip" id="isVipCheck">
+                        <label class="form-check-label" for="isVipCheck">
+                            <i class="fas fa-crown text-warning me-1"></i> VIP User
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Add User
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Note Modal -->
+<div class="modal fade" id="editNoteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Edit User Note</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{{ url_for('update_user') }}">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update_note">
+                    <input type="hidden" name="user_id" id="editUserId">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Note</label>
+                        <input type="text" name="note" id="editUserNote" class="form-control"
+                            placeholder="Enter a note">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function editUser(userId, note) {
+        document.getElementById('editUserId').value = userId;
+        document.getElementById('editUserNote').value = note;
+        new bootstrap.Modal(document.getElementById('editNoteModal')).show();
+    }
+</script>
+{% endblock %}
