@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 import asyncio
 import nest_asyncio
 from dotenv import load_dotenv
-from telegram import BotCommand, Update
+from telegram import BotCommand, MenuButtonWebApp, Update, WebAppInfo
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.error import TelegramError
 
@@ -12,8 +12,9 @@ from config import LOG_FILE
 from database.db import init_db
 from handlers.callbacks import button_handler
 from utils.i18n import load_translations, tr
-from utils.email_sender import log_action, email_worker
+from utils.email_sender import log_action
 from utils.scheduler import scheduled_email_worker
+from utils.cleanup import retention_worker
 from handlers.drafts import savedraft_command, drafts_command, senddraft_command, deldraft_command
 from handlers.templates import savetemplate_command, templates_command, usetemplate_command, deltemplate_command
 from handlers.shortcuts import setquick_command, quick_command
@@ -21,7 +22,7 @@ from handlers.html_templates import htmltemplate_command
 from handlers.vip_features import creategroup_command, addtogroup_command, groups_command, delgroup_command, schedule_command, scheduled_command, cancelschedule_command, mystats_command
 
 # Import handlers
-from handlers.user import start, help_command, history_command, cancel_command, about_command, lang_command, vip_command, myid_command, handle_message, addcontact_command, delcontact_command
+from handlers.user import start, help_command, history_command, cancel_command, about_command, lang_command, vip_command, myid_command, handle_message, addcontact_command, delcontact_command, contacts_command
 from handlers.admin import admin_command, ban_command, unban_command, setvip_command, removevip_command, setquota_command, stats_command, maintenance_command, feedback_command, broadcast_command
 from handlers.support import support_command, reply_command
 
@@ -60,13 +61,18 @@ async def post_init(application):
         BotCommand("myid", "Show your user ID"),
         BotCommand("addcontact", "Add a contact"),
         BotCommand("delcontact", "Delete a contact"),
+        BotCommand("contacts", "List or search contacts"),
         BotCommand("support", "Contact support"),
     ]
     await application.bot.set_my_commands(commands)
+    webapp_url = os.getenv("WEBAPP_URL", "").strip()
+    if webapp_url.startswith("https://"):
+        await application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="Ouvrir BotMailSuper", web_app=WebAppInfo(url=webapp_url))
+        )
     
-    # Start email worker
-    asyncio.create_task(email_worker())
     asyncio.create_task(scheduled_email_worker())
+    asyncio.create_task(retention_worker())
     
     print("🤖 Bot started and ready!")
 
@@ -99,6 +105,7 @@ def main():
     app.add_handler(CommandHandler("myid", myid_command))
     app.add_handler(CommandHandler("addcontact", addcontact_command))
     app.add_handler(CommandHandler("delcontact", delcontact_command))
+    app.add_handler(CommandHandler("contacts", contacts_command))
     
     # Admin Commands
     app.add_handler(CommandHandler("admin", admin_command))

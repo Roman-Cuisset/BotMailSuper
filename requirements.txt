@@ -5,3 +5,4 @@ nest-asyncio
 flask
 gunicorn
 cryptography==46.0.3
+Markdown>=3.5,<4

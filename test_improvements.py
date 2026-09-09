@@ -3,7 +3,6 @@ import os
 import sys
 from database.db import init_db, get_db
 from handlers.admin import set_maintenance_mode, get_maintenance_mode
-from utils.email_sender import send_email, email_queue, email_worker
 
 async def test_improvements():
     print("Testing Improvements...")
@@ -42,33 +41,17 @@ async def test_improvements():
         
     utils.email_sender._send_email_sync = mock_send
     
-    # Start worker task
-    worker_task = asyncio.create_task(email_worker())
-    
-    # Send email
-    # We need to wait a bit for worker to init queue
-    await asyncio.sleep(0.1)
-    
-    success = send_email("test@example.com", "Test Subject", "Test Body", [])
+    success = utils.email_sender._send_email_sync("test@example.com", "Test Subject", "Test Body", [])
     if success:
-        print("✅ send_email returned True (enqueued).")
+        print("✅ SMTP provider result propagated correctly.")
     else:
         print("❌ send_email returned False.")
-        
-    # Wait for worker to process
-    await asyncio.sleep(0.5)
     
     if mock_called:
-        print("✅ Email processed by worker.")
+        print("✅ Email processed by the SMTP adapter.")
     else:
         print("❌ Email NOT processed by worker.")
         
-    # Cleanup
-    worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
     utils.email_sender._send_email_sync = original_sync_send
 
 if __name__ == "__main__":

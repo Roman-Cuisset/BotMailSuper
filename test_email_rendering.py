@@ -35,10 +35,7 @@ def test_rendering():
     else:
         print("❌ CSS 'display: inline-block' NOT found.")
 
-    # Output to file for manual inspection
-    with open("test_email_output.html", "w", encoding="utf-8") as f:
-        f.write(html)
-    print("✅ Generated 'test_email_output.html' for manual inspection.")
+    print("✅ Rendering checks completed without creating runtime files.")
 
 if __name__ == "__main__":
     test_rendering()

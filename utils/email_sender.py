@@ -1,4 +1,3 @@
-from config import LOCAL_SAVE_FOLDER
 from database.db import get_db
 from utils.html_templates import is_html
 import os
@@ -18,6 +17,12 @@ SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
 logger = logging.getLogger(__name__)
+
+
+def recipient_log_label(address):
+    """Keep recipient addresses out of operational log files."""
+    domain = address.rsplit("@", 1)[-1] if "@" in address else "invalid"
+    return f"recipient@{domain}"
 
 def log_action(message, user_id=None):
     prefix = f"[user_id={user_id}] " if user_id else ""
@@ -58,36 +63,6 @@ def render_email_html(expediteur, message_content, attachments, is_vip=False):
     html = html.replace("{{attachments_list}}", att_html)
     return html
 
-# Queue for email sending
-email_queue = None
-
-async def email_worker():
-    global email_queue
-    # Initialize queue inside the loop to ensure it's bound to the correct loop
-    if email_queue is None:
-        email_queue = asyncio.Queue()
-        
-    logger.info("📧 Email worker started")
-    while True:
-        # Get a "work item" out of the queue.
-        task = await email_queue.get()
-        
-        to_address, subject, body, attachments, sender_user, is_vip, sender_name_override, future = task
-        
-        # Run the blocking SMTP call in a separate thread to avoid blocking the asyncio loop
-        loop = asyncio.get_running_loop()
-        try:
-            success = await loop.run_in_executor(None, _send_email_sync, to_address, subject, body, attachments, sender_user, is_vip, sender_name_override)
-            if future and not future.done():
-                future.set_result(success)
-        except Exception as e:
-            logger.error(f"❌ Error in email worker: {e}")
-            if future and not future.done():
-                future.set_result(False)
-        
-        # Notify the queue that the "work item" has been processed.
-        email_queue.task_done()
-
 def _send_email_sync(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None):
     try:
         # Get signature if VIP
@@ -124,7 +99,7 @@ def _send_email_sync(to_address, subject, body, attachments, sender_user=None, i
                             'port': int(smtp_port),
                         }
                             
-                        logger.info(f"📧 Using custom SMTP account: {custom_account['email']}")
+                        logger.info("📧 Using a custom SMTP account")
                     except Exception as e:
                         logger.error(f"❌ Error parsing custom account config: {e}")
                         custom_account = None
@@ -169,13 +144,13 @@ def _send_email_sync(to_address, subject, body, attachments, sender_user=None, i
                 with smtplib.SMTP_SSL(custom_account['host'], custom_account['port']) as smtp:
                     smtp.login(custom_account['email'], custom_account['password'])
                     smtp.send_message(msg)
-                log_action(f"✅ Email sent via custom SMTP to {to_address}")
+                log_action(f"✅ Email sent via custom SMTP to {recipient_log_label(to_address)}")
                 return True
             except Exception as e:
                 logger.error(f"❌ Custom SMTP failed: {e}")
                 return False
 
-        logger.info(f"📧 Sending email via default SMTP to {to_address}")
+        logger.info(f"📧 Sending email via default SMTP to {recipient_log_label(to_address)}")
         
         if EMAIL_SENDER is None or EMAIL_PASSWORD is None:
             raise ValueError("EMAIL_SENDER and EMAIL_PASSWORD must not be None")
@@ -184,36 +159,18 @@ def _send_email_sync(to_address, subject, body, attachments, sender_user=None, i
             smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
             smtp.send_message(msg)
         
-        log_action(f"✅ Email sent via Default SMTP to {to_address}")
+        log_action(f"✅ Email sent via default SMTP to {recipient_log_label(to_address)}")
         return True
         
     except Exception as e:
-        log_action(f"❌ ERROR sending email to {to_address}: {e}")
+        log_action(f"❌ SMTP error for {recipient_log_label(to_address)}: {e}")
         return False
 
 def send_email(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None):
-    """
-    Non-blocking email send. Enqueues the email if an event loop is running.
-    Falls back to synchronous send if no loop is running (e.g. scripts).
-    """
-    global email_queue
-    try:
-        loop = asyncio.get_running_loop()
-        if email_queue is None:
-             # If queue not initialized (worker not started), we can't queue.
-             # But we can try to init it if we are in a loop? 
-             # Safer to fallback or warn. 
-             # For now, let's assume worker starts first. If not, we init here.
-             email_queue = asyncio.Queue()
-             
-        # Use call_soon_threadsafe if we might be in a different thread, 
-        # but usually we are in the same loop. 
-        # put_nowait is non-blocking.
-        email_queue.put_nowait((to_address, subject, body, attachments, sender_user, is_vip, sender_name_override, None))
-        return True
-    except RuntimeError:
-        # No loop running? Fallback to sync
-        return _send_email_sync(to_address, subject, body, attachments, sender_user, is_vip, sender_name_override)
+    """Synchronous entry point for WSGI workers and scripts."""
+    return _send_email_sync(
+        to_address, subject, body, attachments, sender_user, is_vip, sender_name_override
+    )
 
 async def send_email_async(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None):
     """Send outside the event loop and return the provider's real result."""

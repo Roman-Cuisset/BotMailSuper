@@ -46,10 +46,10 @@ async def scheduled_email_worker():
 
                     if success:
                         print(f"✅ Sent scheduled email #{email['id']}")
-                        log_action(f"✅ Sent scheduled email #{email['id']} to {email['recipient_email']}")
+                        log_action(f"✅ Sent scheduled email #{email['id']}", email['user_id'])
                     else:
                         print(f"❌ Failed scheduled email #{email['id']}")
-                        log_action(f"❌ Failed scheduled email #{email['id']} to {email['recipient_email']}")
+                        log_action(f"❌ Failed scheduled email #{email['id']}", email['user_id'])
         
         except Exception as e:
             print(f"❌ Scheduler error: {e}")

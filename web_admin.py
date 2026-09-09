@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, render_template, request, redirect, url_for, session, send_from_directory, make_response
 from datetime import datetime, timedelta
+from collections import defaultdict, deque
 import csv
 import requests
 import sys
@@ -7,11 +8,13 @@ import os
 import json
 import hmac
 import secrets
+from time import monotonic
 from dotenv import load_dotenv
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # Add parent directory to path for database import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from database.db import get_db
+from database.db import get_db, init_db
 
 load_dotenv("secrets.env")
 
@@ -25,10 +28,56 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "true").lower() == "true",
 )
 
+init_db()
+
 LOG_FILE = "bot_log.txt"
 SESSION_TIMEOUT = 600  # 10 minutes
 
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 15 * 60
+login_attempts = defaultdict(deque)
+
+
+def _get_admin_password_hash():
+    """Return the persisted hash, migrating the legacy environment password once."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'admin_password_hash'"
+        ).fetchone()
+        if row and row["value"]:
+            return row["value"]
+
+        configured_hash = os.getenv("ADMIN_PASSWORD_HASH", "").strip()
+        legacy_password = os.getenv("ADMIN_PASSWORD", "")
+        if configured_hash:
+            password_hash = configured_hash
+        elif legacy_password:
+            password_hash = generate_password_hash(legacy_password)
+        else:
+            raise RuntimeError("ADMIN_PASSWORD_HASH or ADMIN_PASSWORD must be configured")
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+            (password_hash,),
+        )
+        conn.commit()
+        return password_hash
+
+
+def _password_matches(password):
+    return bool(password) and check_password_hash(_get_admin_password_hash(), password)
+
+
+def _login_key():
+    return request.remote_addr or "unknown"
+
+
+def _is_login_limited(key):
+    now = monotonic()
+    attempts = login_attempts[key]
+    while attempts and now - attempts[0] >= LOGIN_WINDOW_SECONDS:
+        attempts.popleft()
+    return len(attempts) >= LOGIN_MAX_ATTEMPTS
 
 
 def tail_lines(path, max_lines=2000, max_bytes=1024 * 1024):
@@ -52,7 +101,7 @@ def tail_lines(path, max_lines=2000, max_bytes=1024 * 1024):
 def session_timeout():
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_urlsafe(32)
-    if request.method == "POST" and not hmac.compare_digest(
+    if request.method == "POST" and not request.path.startswith("/api/miniapp/") and not hmac.compare_digest(
         request.form.get("csrf_token", ""), session["csrf_token"]
     ):
         return "Invalid CSRF token", 400
@@ -72,12 +121,25 @@ def inject_csrf_token():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        key = _login_key()
+        if _is_login_limited(key):
+            response = make_response(
+                render_template("login.html", error="Too many attempts. Try again in 15 minutes."),
+                429,
+            )
+            response.headers["Retry-After"] = str(LOGIN_WINDOW_SECONDS)
+            return response
         supplied_password = request.form.get("password", "")
-        if ADMIN_PASSWORD and hmac.compare_digest(supplied_password, ADMIN_PASSWORD):
+        if _password_matches(supplied_password):
+            login_attempts.pop(key, None)
+            csrf_token = session.get("csrf_token")
+            session.clear()
+            session["csrf_token"] = csrf_token or secrets.token_urlsafe(32)
             session["admin"] = True
             session["last_active"] = datetime.now().timestamp()
             return redirect(url_for("index"))
         else:
+            login_attempts[key].append(monotonic())
             return render_template("login.html", error="Wrong password")
     return render_template("login.html", error=None)
 
@@ -151,124 +213,12 @@ def clear_logs():
 
 @app.route("/change_password", methods=["GET", "POST"])
 def change_password():
-    global ADMIN_PASSWORD
     if not session.get("admin"):
         return redirect(url_for("login"))
-    msg = ""
-    success = False
-    if request.method == "POST":
-        old = request.form.get("old_password")
-        new = request.form.get("new_password")
-        if old == ADMIN_PASSWORD and new:
-            ADMIN_PASSWORD = new
-            msg = "Mot de passe changé avec succès (valable jusqu'au redémarrage du serveur) !"
-            success = True
-        else:
-            msg = "Ancien mot de passe incorrect ou nouveau mot de passe vide."
-    return render_template_string("""
-<!doctype html>
-<html>
-<head>
-    <title>Changer le mot de passe admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="icon" type="image/png" href="{{ url_for('logo') }}">
-    <style>
-        body { background: #f8f9fa; }
-        .center-card {
-            max-width: 400px;
-            margin: 60px auto;
-        }
-        .logo-round {
-            height:48px;
-            width:48px;
-            object-fit:cover;
-            border-radius:50%;
-            margin-bottom: 16px;
-            border:2px solid #e5e5e5;
-            background:#fff;
-            display:block;
-            margin-left:auto;
-            margin-right:auto;
-            transition: box-shadow 0.2s, transform 0.2s;
-        }
-        .logo-round:hover {
-            box-shadow: 0 0 0 4px #0d6efd33;
-            transform: scale(1.08);
-        }
-        .card.rounded-4 {
-            border-radius: 2rem !important;
-            box-shadow: 0 6px 32px 0 #0001;
-            transition: box-shadow 0.2s;
-        }
-        .card.rounded-4:hover {
-            box-shadow: 0 12px 48px 0 #0002;
-        }
-        .toggle-pwd {
-            cursor: pointer;
-            position: absolute;
-            right: 18px;
-            top: 38px;
-            /* Ajustement vertical précis pour l'alignement */
-            color: #888;
-            z-index: 2;
-            padding: 0;
-            background: none;
-            border: none;
-        }
-        .position-relative {
-                <div class="mb-3 position-relative">
-                    <label for="old_password" class="form-label">Ancien mot de passe</label>
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="password" name="old_password" id="old_password" class="form-control" required autofocus>
-                    <span class="toggle-pwd" onclick="togglePwd('old_password', this)">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zm-8 4.5c-3.314 0-6-3.134-6-4.5s2.686-4.5 6-4.5 6 3.134 6 4.5-2.686 4.5-6 4.5z"/>
-                            <path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0 5a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
-                        </svg>
-                    </span>
-                </div>
-                <div class="mb-3 position-relative">
-                    <label for="new_password" class="form-label">Nouveau mot de passe</label>
-                    <input type="password" name="new_password" id="new_password" class="form-control" required>
-                    <span class="toggle-pwd" onclick="togglePwd('new_password', this)">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zm-8 4.5c-3.314 0-6-3.134-6-4.5s2.686-4.5 6-4.5 6 3.134 6 4.5-2.686 4.5-6 4.5z"/>
-                            <path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0 5a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
-                        </svg>
-                    </span>
-                </div>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-primary" type="submit">Changer</button>
-                    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Retour</a>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-<script>
-function togglePwd(fieldId, el) {
-    var input = document.getElementById(fieldId);
-    if (input.type === "password") {
-        input.type = "text";
-        el.innerHTML = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M13.359 11.238l1.42 1.42a.75.75 0 0 1-1.06 1.06l-1.42-1.42A7.48 7.48 0 0 1 8 13.5c-5 0-8-5.5-8-5.5a15.6 15.6 0 0 1 3.34-3.746l-1.42-1.42a.75.75 0 1 1 1.06-1.06l1.42 1.42A7.48 7.48 0 0 1 8 2.5c5 0 8 5.5 8 5.5a15.6 15.6 0 0 1-3.34 3.746zM8 4.5c-3.314 0-6 3.134-6 4.5s2.686 4.5 6 4.5 6-3.134 6-4.5-2.686-4.5-6-4.5zm0 2a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z"/>
-        </svg>`;
-    } else {
-        input.type = "password";
-        el.innerHTML = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zm-8 4.5c-3.314 0-6-3.134-6-4.5s2.686-4.5 6-4.5 6 3.134 6 4.5-2.686 4.5-6 4.5z"/>
-            <path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0 5a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
-        </svg>`;
-    }
-}
-</script>
-</body>
-</html>
-    """, msg=msg, success=success)
+    return redirect(url_for("settings"))
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
-    global ADMIN_PASSWORD
     if not session.get("admin"):
         return redirect(url_for("login"))
     
@@ -280,12 +230,17 @@ def settings():
         if action == "change_password":
             old = request.form.get("old_password")
             new = request.form.get("new_password")
-            if old == ADMIN_PASSWORD and new:
-                ADMIN_PASSWORD = new
-                password_msg = "Password changed successfully (valid until server restart)!"
+            if _password_matches(old) and new and len(new) >= 12:
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_hash', ?)",
+                        (generate_password_hash(new),),
+                    )
+                    conn.commit()
+                password_msg = "Password changed successfully."
                 password_success = True
             else:
-                password_msg = "Incorrect current password or empty new password."
+                password_msg = "Incorrect current password, or new password shorter than 12 characters."
     
     return render_template(
         "settings.html",

@@ -30,6 +30,54 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
+    if query.data == "home_history":
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT to_email, sent_at, status FROM history WHERE user_id = ? ORDER BY id DESC LIMIT 5",
+                (user_id,),
+            ).fetchall()
+        message = "🕓 Derniers envois :\n\n" + ("\n".join(
+            f"{'✅' if row['status'] == 'sent' else '❌'} {row['to_email']} · {row['sent_at']}" for row in rows
+        ) if rows else "Aucun historique.")
+        await query.edit_message_text(message)
+        return
+
+    if query.data in {"home_contacts"} or query.data.startswith("contacts_page:"):
+        from handlers.user import contact_keyboard
+        page = int(query.data.split(":", 1)[1]) if ":" in query.data else 0
+        search = context.user_data.get("contact_search", "")
+        markup, count, page, max_page = contact_keyboard(user_id, page, search)
+        await query.edit_message_text(
+            f"👥 {count} contact(s)" + (f" · page {page + 1}/{max_page + 1}" if count else ""),
+            reply_markup=markup,
+        )
+        return
+
+    if query.data == "home_drafts":
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT name, to_email FROM drafts WHERE user_id = ? ORDER BY created_at DESC LIMIT 20",
+                (user_id,),
+            ).fetchall()
+        keyboard = [[InlineKeyboardButton(
+            f"📧 {row['name']} → {(row['to_email'] or 'Non défini')[:20]}",
+            callback_data=f"draft_view:{row['name']}",
+        )] for row in rows]
+        await query.edit_message_text(
+            f"📋 Vos brouillons ({len(rows)})" if rows else "📭 Aucun brouillon sauvegardé.",
+            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+        )
+        return
+
+    if query.data == "home_language":
+        keyboard = [[
+            InlineKeyboardButton("🇬🇧 English", callback_data="lang:en"),
+            InlineKeyboardButton("🇫🇷 Français", callback_data="lang:fr"),
+            InlineKeyboardButton("🇷🇺 Русский", callback_data="lang:ru"),
+        ]]
+        await query.edit_message_text(tr("choose_language", str(user_id)), reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
     if query.data.startswith("htmltpl:"):
         from handlers.html_templates import handle_html_template_callback
         await handle_html_template_callback(query, context)
@@ -54,21 +102,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Email selection - simplified (no VIP multi-select)
     if query.data == "quick_send":
         await query.edit_message_text(tr("please_select_destination", str(user_id)))
-        
-        # Fetch contacts
-        with get_db() as conn:
-            contacts = conn.execute("SELECT name, email FROM contacts WHERE user_id = ?", (user_id,)).fetchall()
-        
-        keyboard = []
-        for c in contacts:
-            keyboard.append([InlineKeyboardButton(f"👤 {c['name']}", callback_data=f"email:{c['email']}")])
-        
-        keyboard.append([InlineKeyboardButton(tr("other_button", str(user_id)), callback_data="email:other")])
-        
+        from handlers.user import contact_keyboard
+        markup, _, _, _ = contact_keyboard(user_id)
         await context.bot.send_message(
             chat_id=user_id,
             text=tr("ask_destination", str(user_id)),
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=markup
         )
         return
 
@@ -79,6 +118,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(tr("please_type_note", str(user_id)))
         return
 
+    if query.data == "edit_subject":
+        context.user_data["awaiting_subject"] = True
+        await query.edit_message_text("✏️ Écrivez le nouveau sujet (200 caractères maximum), ou /cancel.")
+        return
+
     # Email selection
     if query.data.startswith("email:"):
         email = query.data.split(":", 1)[1]
@@ -87,13 +131,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(tr("enter_email", str(user_id)))
         else:
             context.user_data["selected_email"] = email
-            log_action(f"📧 User {user_id} selected email: {email}", user_id)
+            log_action("📧 Recipient selected", user_id)
             await query.edit_message_text(tr("email_selected", str(user_id), email=email))
             await send_preview(user_id, context)
         return
 
     # Confirm send
-    if query.data == "confirm_send":
+    if query.data in {"confirm_send", "retry_send"}:
         content = context.user_data
         if "text" not in content and "attachments" not in content:
              await query.edit_message_text(tr("no_message_to_send", str(user_id)))
@@ -137,16 +181,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Save to history
             with get_db() as conn:
                 conn.execute("""
-                    INSERT INTO history (user_id, to_email, details) VALUES (?, ?, ?)
-                """, (user_id, to, "Sent via bot"))
+                    INSERT INTO history (user_id, to_email, subject, status, error, details)
+                    VALUES (?, ?, ?, 'sent', '', ?)
+                """, (user_id, to, subject, "Sent via bot"))
                 conn.commit()
             
-            log_action(f"✅ Sent to {to}", user_id)
+            log_action("✅ Email accepted by SMTP", user_id)
             await query.edit_message_text(tr("sent_success", str(user_id), email=to))
+            context.user_data.clear()
         else:
-            await query.edit_message_text(tr("sent_fail", str(user_id)))
-        
-        context.user_data.clear()
+            with get_db() as conn:
+                conn.execute("""
+                    INSERT INTO history (user_id, to_email, subject, status, error, details)
+                    VALUES (?, ?, ?, 'failed', 'SMTP failure', ?)
+                """, (user_id, to, subject, "Failed via bot"))
+                conn.commit()
+            keyboard = [[
+                InlineKeyboardButton("🔄 Réessayer", callback_data="retry_send"),
+                InlineKeyboardButton(tr("cancel_button", str(user_id)), callback_data="cancel_send"),
+            ]]
+            await query.edit_message_text(tr("sent_fail", str(user_id)), reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     # Cancel send
@@ -180,13 +234,16 @@ async def send_preview(user_id, context):
     text = content.get("text", "(No text)").strip()
     attachments = content.get("attachments", [])
     email = content.get("selected_email", "")
+    subject = content.get("email_subject", "") or "Automatique"
     
     preview_msg = tr("preview_msg", str(user_id), 
                      text=text, 
                      attachments_count=len(attachments), 
                      email=email)
     
+    preview_msg += f"\nSujet : {subject}"
     keyboard = [
+        [InlineKeyboardButton("✏️ Modifier le sujet", callback_data="edit_subject")],
         [InlineKeyboardButton(tr("send_button", str(user_id)), callback_data="confirm_send")],
         [InlineKeyboardButton(tr("cancel_button", str(user_id)), callback_data="cancel_send")]
     ]

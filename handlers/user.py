@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 from config import ADMIN_IDS, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES
 from utils.i18n import tr
@@ -7,6 +7,7 @@ from utils.state import get_maintenance_mode
 from database.db import get_db
 import sqlite3
 import asyncio
+import os
 from email.utils import parseaddr
 
 
@@ -42,6 +43,40 @@ def attachment_size(message):
 # Global dict to track media groups: {media_group_id: {'messages': [...], 'task': asyncio.Task}}
 media_groups = {}
 
+
+def contact_keyboard(user_id, page=0, search=""):
+    """Build a bounded, paginated contact picker for Telegram."""
+    page_size = 8
+    with get_db() as conn:
+        if search:
+            pattern = f"%{search}%"
+            contacts = conn.execute(
+                """SELECT name, email FROM contacts WHERE user_id = ?
+                   AND (name LIKE ? OR email LIKE ?) ORDER BY name COLLATE NOCASE""",
+                (user_id, pattern, pattern),
+            ).fetchall()
+        else:
+            contacts = conn.execute(
+                "SELECT name, email FROM contacts WHERE user_id = ? ORDER BY name COLLATE NOCASE",
+                (user_id,),
+            ).fetchall()
+    max_page = max(0, (len(contacts) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    visible = contacts[page * page_size:(page + 1) * page_size]
+    keyboard = [
+        [InlineKeyboardButton(f"👤 {item['name']}", callback_data=f"email:{item['email']}")]
+        for item in visible
+    ]
+    navigation = []
+    if page > 0:
+        navigation.append(InlineKeyboardButton("◀️", callback_data=f"contacts_page:{page - 1}"))
+    if page < max_page:
+        navigation.append(InlineKeyboardButton("▶️", callback_data=f"contacts_page:{page + 1}"))
+    if navigation:
+        keyboard.append(navigation)
+    keyboard.append([InlineKeyboardButton(tr("other_button", str(user_id)), callback_data="email:other")])
+    return InlineKeyboardMarkup(keyboard), len(contacts), page, max_page
+
 async def check_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if get_maintenance_mode() and user_id not in ADMIN_IDS:
@@ -70,7 +105,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_vip:
         msg += "\n\n" + tr("vip_bonuses", str(user_id))
     
-    await update.message.reply_text(msg)
+    keyboard = []
+    webapp_url = os.getenv("WEBAPP_URL", "").strip()
+    if webapp_url.startswith("https://"):
+        keyboard.append([InlineKeyboardButton("✉️ Ouvrir la Mini App", web_app=WebAppInfo(url=webapp_url))])
+    keyboard.extend([
+        [InlineKeyboardButton("🕓 Historique", callback_data="home_history"), InlineKeyboardButton("👥 Contacts", callback_data="home_contacts")],
+        [InlineKeyboardButton("💾 Brouillons", callback_data="home_drafts"), InlineKeyboardButton("🌐 Langue", callback_data="home_language")],
+    ])
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -145,6 +188,9 @@ async def addcontact_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     name = context.args[0]
     email = context.args[1]
+    if not is_valid_email(email):
+        await update.message.reply_text("❌ Adresse e-mail invalide.")
+        return
     
     try:
         with get_db() as conn:
@@ -173,6 +219,22 @@ async def delcontact_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text(f"✅ Contact '{name}' deleted.")
         else:
             await update.message.reply_text(f"❌ Contact '{name}' not found.")
+
+
+async def contacts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List or search contacts without flooding the chat."""
+    if await check_maintenance(update, context):
+        return
+    user_id = update.effective_user.id
+    search = " ".join(context.args).strip()
+    context.user_data["contact_search"] = search
+    markup, count, page, max_page = contact_keyboard(user_id, search=search)
+    title = f"👥 {count} contact(s)"
+    if search:
+        title += f" pour « {search} »"
+    if count:
+        title += f" · page {page + 1}/{max_page + 1}"
+    await update.message.reply_text(title, reply_markup=markup)
 
 # Multi-Email Management Commands
 
@@ -216,20 +278,11 @@ async def process_collected_media(media_group_id: str, user_id: int, context: Co
     context.user_data["text"] = text
     context.user_data["attachments"] = attachments
     
-    # Show contact selection
-    with get_db() as conn:
-        contacts = conn.execute("SELECT name, email FROM contacts WHERE user_id = ?", (user_id,)).fetchall()
-    
-    keyboard = []
-    for c in contacts:
-        keyboard.append([InlineKeyboardButton(f"👤 {c['name']}", callback_data=f"email:{c['email']}")])
-    
-    keyboard.append([InlineKeyboardButton(tr("other_button", str(user_id)), callback_data="email:other")])
-    
+    markup, _, _, _ = contact_keyboard(user_id)
     # Reply to the first message in the group
     await messages[0].reply_text(
         tr("ask_destination", str(user_id)),
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=markup
     )
 
 
@@ -273,6 +326,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_preview(user_id, context)
         return
 
+    if context.user_data.get("awaiting_subject"):
+        subject = (update.message.text or "").strip()
+        if not subject or len(subject) > 200:
+            await update.message.reply_text("❌ Le sujet doit contenir entre 1 et 200 caractères.")
+            return
+        context.user_data["awaiting_subject"] = False
+        context.user_data["email_subject"] = subject
+        from handlers.callbacks import send_preview
+        await send_preview(user_id, context)
+        return
+
     # Check if user is adding a note
     if context.user_data.get("awaiting_note"):
         note = update.message.text.strip()
@@ -287,20 +351,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(f"✅ Note added!\n\nNow choose destination:")
         
-        # Fetch contacts
-        with get_db() as conn:
-            contacts = conn.execute("SELECT name, email FROM contacts WHERE user_id = ?", (user_id,)).fetchall()
-        
-        keyboard = []
-        for c in contacts:
-            keyboard.append([InlineKeyboardButton(f"👤 {c['name']}", callback_data=f"email:{c['email']}")])
-        
-        keyboard.append([InlineKeyboardButton(tr("other_button", str(user_id)), callback_data="email:other")])
-        
+        markup, _, _, _ = contact_keyboard(user_id)
         await context.bot.send_message(
             chat_id=user_id,
             text=tr("ask_destination", str(user_id)),
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=markup
         )
         return
 
@@ -366,19 +421,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["text"] = text
         context.user_data["attachments"] = attachments
         
-        # Show contact selection immediately
-        with get_db() as conn:
-            contacts = conn.execute("SELECT name, email FROM contacts WHERE user_id = ?", (user_id,)).fetchall()
-        
-        keyboard = []
-        for c in contacts:
-            keyboard.append([InlineKeyboardButton(f"👤 {c['name']}", callback_data=f"email:{c['email']}")])
-        
-        keyboard.append([InlineKeyboardButton(tr("other_button", str(user_id)), callback_data="email:other")])
-        
+        markup, _, _, _ = contact_keyboard(user_id)
         await update.message.reply_text(
             tr("ask_destination", str(user_id)),
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=markup
         )
     else:
         await update.message.reply_text(tr("unknown_command", str(user_id)))
@@ -388,17 +434,9 @@ async def trigger_send_flow(user_id, text, attachments, context):
     """Start recipient selection for reusable content such as a template."""
     context.user_data["text"] = text
     context.user_data["attachments"] = attachments
-    with get_db() as conn:
-        contacts = conn.execute(
-            "SELECT name, email FROM contacts WHERE user_id = ? ORDER BY name", (user_id,)
-        ).fetchall()
-    keyboard = [
-        [InlineKeyboardButton(f"👤 {contact['name']}", callback_data=f"email:{contact['email']}")]
-        for contact in contacts
-    ]
-    keyboard.append([InlineKeyboardButton(tr("other_button", str(user_id)), callback_data="email:other")])
+    markup, _, _, _ = contact_keyboard(user_id)
     await context.bot.send_message(
         chat_id=user_id,
         text=tr("ask_destination", str(user_id)),
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=markup,
     )

@@ -7,6 +7,13 @@ def init_db():
     """Initializes the database with the required tables."""
     with get_db() as conn:
         cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
         # Users table
         cursor.execute("""
@@ -35,11 +42,23 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 to_email TEXT,
+                subject TEXT DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'sent',
+                error TEXT DEFAULT '',
                 sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 details TEXT,
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
         """)
+
+        history_columns = {row[1] for row in cursor.execute("PRAGMA table_info(history)")}
+        for name, definition in (
+            ("subject", "TEXT DEFAULT ''"),
+            ("status", "TEXT NOT NULL DEFAULT 'sent'"),
+            ("error", "TEXT DEFAULT ''"),
+        ):
+            if name not in history_columns:
+                cursor.execute(f"ALTER TABLE history ADD COLUMN {name} {definition}")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS drafts (
@@ -153,6 +172,8 @@ def init_db():
         """)
         # Insert default maintenance mode if not exists
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('maintenance_mode', '0')")
+        cursor.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
+        cursor.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (2)")
         
         # User Emails table (Multi-Account) - Phase 2
         cursor.execute("""

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>BotMailSuper</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/miniapp.css') }}">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand"><img src="{{ url_for('logo') }}" alt=""><div><strong>BotMailSuper</strong><span id="welcome">Mini client e-mail</span></div></div>
+        <div class="quota" id="quota">— / —</div>
+    </header>
+
+    <main>
+        <section class="view active" id="compose-view">
+            <div class="hero"><span>Nouveau message</span><h1>Envoyez sans quitter Telegram.</h1></div>
+            <form id="compose-form" class="card">
+                <label>Destinataire(s)<input id="recipients" name="recipients" type="text" autocomplete="email" placeholder="nom@exemple.com" required></label>
+                <div id="contact-chips" class="chips"></div>
+                <label>Sujet<input id="subject" name="subject" type="text" maxlength="200" placeholder="Objet du message"></label>
+                <label>Message<textarea id="body" name="body" rows="7" maxlength="50000" placeholder="Écrivez votre message…"></textarea></label>
+                <label class="file-label">Pièces jointes <span>10 fichiers, 25 Mo au total</span><input id="attachments" name="attachments" type="file" multiple></label>
+                <div id="file-list" class="muted"></div>
+                <div class="actions"><button type="button" class="secondary" id="save-draft">Enregistrer le brouillon</button><button type="submit" class="primary" id="send-button">Envoyer</button></div>
+            </form>
+        </section>
+
+        <section class="view" id="contacts-view">
+            <div class="section-title"><div><span>Carnet</span><h2>Contacts</h2></div><button class="round" id="new-contact">＋</button></div>
+            <input class="search" id="contact-search" placeholder="Rechercher un contact">
+            <div id="contacts-list" class="list"></div>
+        </section>
+
+        <section class="view" id="drafts-view">
+            <div class="section-title"><div><span>À reprendre</span><h2>Brouillons</h2></div></div>
+            <div id="drafts-list" class="list"></div>
+        </section>
+
+        <section class="view" id="history-view">
+            <div class="section-title"><div><span>Suivi réel</span><h2>Historique</h2></div></div>
+            <div id="history-list" class="list"></div>
+        </section>
+
+        <section class="view" id="account-view">
+            <div class="section-title"><div><span>Configuration</span><h2>Compte</h2></div></div>
+            <div class="card account-card"><div class="avatar" id="avatar">B</div><div><strong id="account-name">Telegram</strong><p id="account-id"></p></div></div>
+            <div class="card"><h3>Expéditeur SMTP</h3><div id="accounts-list" class="muted">Chargement…</div></div>
+            <div class="card"><h3>Limites</h3><p>10 destinataires, 10 fichiers, 20 Mo par fichier et 25 Mo au total.</p></div>
+        </section>
+    </main>
+
+    <nav>
+        <button class="active" data-view="compose"><b>✎</b><span>Composer</span></button>
+        <button data-view="contacts"><b>♙</b><span>Contacts</span></button>
+        <button data-view="drafts"><b>▱</b><span>Brouillons</span></button>
+        <button data-view="history"><b>◷</b><span>Historique</span></button>
+        <button data-view="account"><b>○</b><span>Compte</span></button>
+    </nav>
+
+    <dialog id="contact-dialog"><form id="contact-form" method="dialog"><h3>Nouveau contact</h3><label>Nom<input name="name" maxlength="80" required></label><label>E-mail<input name="email" type="email" required></label><div class="actions"><button type="button" class="secondary close-dialog">Annuler</button><button class="primary" value="save">Enregistrer</button></div></form></dialog>
+    <dialog id="draft-dialog"><form id="draft-form" method="dialog"><h3>Nom du brouillon</h3><label>Nom<input name="name" maxlength="80" required></label><div class="actions"><button type="button" class="secondary close-dialog">Annuler</button><button class="primary" value="save">Enregistrer</button></div></form></dialog>
+    <div id="toast" role="status"></div>
+    <script src="{{ url_for('static', filename='js/miniapp.js') }}"></script>
+</body>
+</html>
