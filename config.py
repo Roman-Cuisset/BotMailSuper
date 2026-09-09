@@ -13,17 +13,9 @@ DAYS_TO_KEEP_HISTORY = 30  # Nombre de jours avant suppression
 # Dossier de sauvegarde locale
 LOCAL_SAVE_FOLDER = "TelegramMailBotFiles"
 
-# config.py
-
-# Limite d'envois par minute par utilisateur
-MAX_MESSAGES_PER_MINUTE = 20
-
-# Activer la suppression automatique de l'historique après N jours (False pour désactiver)
-AUTO_CLEANUP_ENABLED = True
-DAYS_TO_KEEP_HISTORY = 30  # Nombre de jours avant suppression
-
-# Dossier de sauvegarde locale
-LOCAL_SAVE_FOLDER = "TelegramMailBotFiles"
+# Telegram files are downloaded into memory before sending.
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 # Fichier historique chiffré
 HISTORY_FILE = "history.json"

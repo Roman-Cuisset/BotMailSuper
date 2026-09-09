@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from config import ADMIN_IDS
+from config import ADMIN_IDS, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES
 from utils.i18n import tr
 from utils.email_sender import log_action
 from utils.state import get_maintenance_mode
@@ -19,6 +19,25 @@ def is_valid_email(value):
         return False
     local, domain = address.rsplit("@", 1)
     return bool(local and "." in domain and not domain.startswith(".") and not domain.endswith("."))
+
+
+def ensure_user(user):
+    """Create/update a user even when they interact without calling /start."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO users (user_id, username) VALUES (?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET username = excluded.username""",
+            (user.id, user.username),
+        )
+        conn.commit()
+
+
+def attachment_size(message):
+    if message.document:
+        return message.document.file_size or 0
+    if message.photo:
+        return message.photo[-1].file_size or 0
+    return 0
 
 # Global dict to track media groups: {media_group_id: {'messages': [...], 'task': asyncio.Task}}
 media_groups = {}
@@ -216,6 +235,7 @@ async def process_collected_media(media_group_id: str, user_id: int, context: Co
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    ensure_user(update.effective_user)
     log_action(f"📩 Received message from user {user_id}", user_id)
     
     # Check blacklist
@@ -296,6 +316,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'task': None
             }
         
+        current_size = sum(attachment_size(item) for item in media_groups[media_group_id]['messages'])
+        new_size = attachment_size(update.message)
+        if new_size > MAX_ATTACHMENT_BYTES or current_size + new_size > MAX_TOTAL_ATTACHMENT_BYTES:
+            media_groups.pop(media_group_id, None)
+            await update.message.reply_text("❌ Pièces jointes trop volumineuses (25 Mo maximum au total).")
+            return
+
         # Add this message to the group
         media_groups[media_group_id]['messages'].append(update.message)
         
@@ -310,6 +337,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Don't process immediately
     
     # Process single message content (not part of a group)
+    if attachment_size(update.message) > MAX_ATTACHMENT_BYTES:
+        await update.message.reply_text("❌ Cette pièce jointe dépasse la limite de 20 Mo.")
+        return
     text_parts = []
     attachments = []
     

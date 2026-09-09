@@ -6,6 +6,7 @@ import sys
 import os
 import json
 import hmac
+import secrets
 from dotenv import load_dotenv
 
 # Add parent directory to path for database import
@@ -18,6 +19,11 @@ app = Flask(__name__)
 app.secret_key = os.getenv("WEB_SECRET_KEY") or os.getenv("SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("WEB_SECRET_KEY or SECRET_KEY must be configured")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "true").lower() == "true",
+)
 
 LOG_FILE = "bot_log.txt"
 SESSION_TIMEOUT = 600  # 10 minutes
@@ -28,6 +34,12 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 @app.before_request
 def session_timeout():
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_urlsafe(32)
+    if request.method == "POST" and not hmac.compare_digest(
+        request.form.get("csrf_token", ""), session["csrf_token"]
+    ):
+        return "Invalid CSRF token", 400
     if "admin" in session:
         now = datetime.now().timestamp()
         last = session.get("last_active", now)
@@ -35,6 +47,11 @@ def session_timeout():
             session.pop("admin", None)
         else:
             session["last_active"] = now
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {"csrf_token": session.get("csrf_token", "")}
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -175,6 +192,7 @@ def change_password():
         .position-relative {
                 <div class="mb-3 position-relative">
                     <label for="old_password" class="form-label">Ancien mot de passe</label>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="password" name="old_password" id="old_password" class="form-control" required autofocus>
                     <span class="toggle-pwd" onclick="togglePwd('old_password', this)">
                         <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">

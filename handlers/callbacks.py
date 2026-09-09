@@ -6,6 +6,23 @@ from utils.email_sender import send_email_async, log_action
 from database.db import get_db
 from datetime import datetime
 from handlers.account import finish_connect_callback
+from collections import defaultdict, deque
+from time import monotonic
+from config import MAX_MESSAGES_PER_MINUTE
+
+
+recent_sends = defaultdict(deque)
+
+
+def send_allowed(user_id):
+    now = monotonic()
+    timestamps = recent_sends[user_id]
+    while timestamps and now - timestamps[0] >= 60:
+        timestamps.popleft()
+    if len(timestamps) >= MAX_MESSAGES_PER_MINUTE:
+        return False
+    timestamps.append(now)
+    return True
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,10 +108,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = content.get("text", "")
         attachments = content.get("attachments", [])
         
-        # Check VIP status for subject/sender info
+        if not to:
+            await query.edit_message_text(tr("no_message_to_send", str(user_id)))
+            return
+
+        # Enforce both the per-minute abuse limit and the configured daily user quota.
+        if not send_allowed(user_id):
+            await query.edit_message_text("❌ Trop d'envois en une minute. Réessayez dans quelques instants.")
+            return
+
         with get_db() as conn:
-            row = conn.execute("SELECT is_vip FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            row = conn.execute("SELECT is_vip, quota FROM users WHERE user_id = ?", (user_id,)).fetchone()
             is_vip = row['is_vip'] if row else False
+            quota = row['quota'] if row else 20
+            sent_today = conn.execute(
+                "SELECT COUNT(*) FROM history WHERE user_id = ? AND date(sent_at) = date('now')",
+                (user_id,),
+            ).fetchone()[0]
+        if quota >= 0 and sent_today >= quota:
+            await query.edit_message_text(f"❌ Quota quotidien atteint ({quota} e-mails).")
+            return
 
         username = query.from_user.username or ""
         default_subject = "Message from VIP user" if is_vip else (

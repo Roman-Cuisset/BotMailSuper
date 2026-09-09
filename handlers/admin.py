@@ -141,8 +141,14 @@ async def setquota_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target_id = int(context.args[0])
         quota = int(context.args[1])
+        if quota < 0:
+            raise ValueError("Quota must be zero or greater")
         with get_db() as conn:
-            conn.execute("UPDATE users SET quota = ? WHERE user_id = ?", (quota, target_id))
+            conn.execute(
+                """INSERT INTO users (user_id, quota) VALUES (?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET quota = excluded.quota""",
+                (target_id, quota),
+            )
             conn.commit()
         await update.message.reply_text(tr("quota_set", str(user_id), user_id=target_id, quota=quota))
     except Exception as e:
