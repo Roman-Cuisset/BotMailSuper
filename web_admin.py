@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory, make_response
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session, send_from_directory, make_response
 from datetime import datetime, timedelta
 import csv
 import requests
@@ -29,6 +29,22 @@ LOG_FILE = "bot_log.txt"
 SESSION_TIMEOUT = 600  # 10 minutes
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+
+def tail_lines(path, max_lines=2000, max_bytes=1024 * 1024):
+    """Read only the end of a log file instead of loading it all into RAM."""
+    if not os.path.exists(path):
+        return []
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        handle.seek(max(0, size - max_bytes))
+        data = handle.read()
+    text = data.decode("utf-8", errors="replace")
+    lines = text.splitlines(keepends=True)
+    if size > max_bytes and lines:
+        lines = lines[1:]
+    return lines[-max_lines:]
 
 # Database access functions handled by database/db.py
 
@@ -73,6 +89,16 @@ def logout():
 @app.route("/logo")
 def logo():
     return send_from_directory('.', 'logotype.png')
+
+
+@app.route("/health")
+def health():
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1").fetchone()
+        return jsonify(status="ok")
+    except Exception:
+        return jsonify(status="unavailable"), 503
 
 @app.route("/export/<what>")
 def export_csv(what):
@@ -395,27 +421,24 @@ def index():
     # Recent Logs
     recent_logs = []
     if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            for line in reversed(lines[-50:]): # Scan last 50, keep up to 8
-                if len(recent_logs) >= 8:
-                    break
-                stripped = line.strip()
-                # Skip noisy HTTP/API request lines
-                if not stripped or "HTTP Request:" in stripped or "getUpdates" in stripped:
-                    continue
-                parts = stripped.split(" ", 2)
-                if len(parts) >= 3:
-                    user_part = parts[1] if "user_id=" in parts[1] else "System"
-                    action = parts[2]
-                    # Truncate long action text
-                    if len(action) > 80:
-                        action = action[:77] + "..."
-                    recent_logs.append({
-                        "time": parts[0],
-                        "user": user_part.replace("[user_id=", "").replace("]", ""),
-                        "action": action
-                    })
+        for line in reversed(tail_lines(LOG_FILE, max_lines=200, max_bytes=256 * 1024)):
+            if len(recent_logs) >= 8:
+                break
+            stripped = line.strip()
+            # Skip noisy HTTP/API polling lines
+            if not stripped or "HTTP Request:" in stripped or "getUpdates" in stripped:
+                continue
+            parts = stripped.split(" ", 2)
+            if len(parts) >= 3:
+                user_part = parts[1] if "user_id=" in parts[1] else "System"
+                action = parts[2]
+                if len(action) > 80:
+                    action = action[:77] + "..."
+                recent_logs.append({
+                    "time": parts[0],
+                    "user": user_part.replace("[user_id=", "").replace("]", ""),
+                    "action": action
+                })
 
     return render_template(
         "dashboard.html", 
@@ -433,11 +456,10 @@ def logs():
         
     logs_content = ""
     if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            # Filter out noisy HTTP/API polling lines
-            filtered = [l for l in lines if "getUpdates" not in l and "HTTP Request:" not in l]
-            logs_content = "".join(filtered) if filtered else "No meaningful logs yet."
+        lines = tail_lines(LOG_FILE)
+        # Filter out noisy HTTP/API polling lines
+        filtered = [l for l in lines if "getUpdates" not in l and "HTTP Request:" not in l]
+        logs_content = "".join(filtered) if filtered else "No meaningful logs yet."
             
     return render_template("logs.html", active_page="logs", logs=logs_content)
 

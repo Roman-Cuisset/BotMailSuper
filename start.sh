@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Start the Telegram Bot in the background
-python main_pro.py &
-
-# Start the Web Admin interface using Gunicorn
-# -w 1: 1 worker process (sufficient for admin interface)
-# -b 0.0.0.0:8080: Bind to all interfaces on port 8080
-exec gunicorn -w 1 -b 0.0.0.0:8080 web_admin:app
+# Run both services with the same production process definition used on the
+# server. Install PM2 first if it is not already available.
+exec pm2 startOrReload ecosystem.config.js --update-env
