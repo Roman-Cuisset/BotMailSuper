@@ -9,7 +9,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -33,9 +33,9 @@ def atomic_write(path, content, mode=None):
     temporary.replace(path)
 
 
-def update_secrets(url):
+def update_secrets(webapp_url):
     lines = SECRETS.read_text(encoding="utf-8").splitlines()
-    replacement = f"WEBAPP_URL={url}/miniapp"
+    replacement = f"WEBAPP_URL={webapp_url}"
     updated = []
     found = False
     for line in lines:
@@ -85,16 +85,15 @@ def public_healthcheck(url):
     return False
 
 
-def update_telegram(url):
+def update_telegram(webapp_url):
     token = dotenv_values(SECRETS).get("TELEGRAM_TOKEN")
     if not token:
         raise RuntimeError("TELEGRAM_TOKEN absent de secrets.env")
-    miniapp_url = f"{url}/miniapp"
     payload = json.dumps({
         "menu_button": {
             "type": "web_app",
             "text": "Ouvrir BotMailSuper",
-            "web_app": {"url": miniapp_url},
+            "web_app": {"url": webapp_url},
         }
     }).encode("utf-8")
     last_error = None
@@ -114,7 +113,7 @@ def update_telegram(url):
                 get_url = f"https://api.telegram.org/bot{token}/getChatMenuButton"
                 with urllib.request.urlopen(get_url, timeout=20) as response:
                     current = json.load(response).get("result", {})
-                if current.get("web_app", {}).get("url") == miniapp_url:
+                if current.get("web_app", {}).get("url") == webapp_url:
                     return
                 last_error = "le bouton Telegram n'est pas encore synchronisé"
         except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
@@ -127,12 +126,16 @@ def publish_url(url):
     print(f"Tunnel Cloudflare obtenu, validation en cours : {url}", flush=True)
     if not public_healthcheck(url):
         raise RuntimeError("le tunnel Cloudflare ne répond pas au contrôle public")
-    miniapp_url = f"{url}/miniapp"
-    update_secrets(url)
-    update_telegram(url)
+    public_frontend = dotenv_values(SECRETS).get("PUBLIC_WEBAPP_URL", "").strip().rstrip("/")
+    if public_frontend.startswith("https://"):
+        webapp_url = f"{public_frontend}/?api={quote(url, safe='')}"
+    else:
+        webapp_url = f"{url}/miniapp"
+    update_secrets(webapp_url)
+    update_telegram(webapp_url)
     # The runtime URL is the readiness marker: publish it only after Telegram agrees.
-    atomic_write(RUNTIME_URL, miniapp_url + "\n", 0o600)
-    print(f"Tunnel public prêt : {miniapp_url}", flush=True)
+    atomic_write(RUNTIME_URL, webapp_url + "\n", 0o600)
+    print(f"Mini App publique prête : {webapp_url}", flush=True)
 
 
 def stop_child(signum, _frame):

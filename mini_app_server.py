@@ -3,7 +3,7 @@
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 
 from database.db import get_db, init_db
 from mini_app import register_mini_app
@@ -37,6 +37,12 @@ def health():
 
 @app.after_request
 def security_headers(response):
+    allowed_origin = "https://roman-cuisset.github.io"
+    if request.path.startswith("/api/miniapp/") and request.headers.get("Origin") == allowed_origin:
+        response.headers["Access-Control-Allow-Origin"] = allowed_origin
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Vary"] = "Origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
