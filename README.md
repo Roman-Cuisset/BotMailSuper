@@ -1,41 +1,41 @@
 # BotMailSuper
 
-BotMailSuper transforme rapidement un texte, une photo, un document ou un album Telegram en e-mail. Le projet comprend le bot, un panneau d’administration et une Telegram Mini App.
+BotMailSuper quickly turns Telegram text, photos, documents, or albums into emails. The project includes the bot, an administration panel, and a Telegram Mini App.
 
-## Fonctions principales
+## Main features
 
-- Envoi SMTP avec confirmation du résultat réel
-- Sujet modifiable, prévisualisation et bouton de nouvelle tentative
-- Contacts paginés et recherchables, groupes, modèles et brouillons
-- Envois programmés, quotas, VIP, blacklist et statistiques
-- Mini App : composer, contacts, brouillons, historique et compte SMTP
-- Français, anglais et russe
+- SMTP sending with confirmation of the actual delivery result
+- Editable subject, preview, and retry button
+- Searchable, paginated contacts, groups, templates, and drafts
+- Scheduled sending, quotas, VIP features, blacklist, and statistics
+- Mini App: composer, contacts, drafts, history, and SMTP account
+- French, English, and Russian
 
-L’ancienne intégration Gmail API a été supprimée. Le service utilise uniquement SMTP.
+The former Gmail API integration has been removed. The service uses SMTP only.
 
 ## Installation
 
-1. Installer Python 3.10 ou plus récent et PM2.
-2. Créer l’environnement : `python3 -m venv .venv`.
-3. Installer les dépendances : `.venv/bin/pip install -r requirements.txt`.
-4. Copier `secrets.env.example` vers `secrets.env`, puis renseigner les valeurs.
-5. Configurer DuckDNS et le proxy Caddy fourni dans `deploy/`.
-6. Lancer les services : `./start.sh`.
+1. Install Python 3.10 or later and PM2.
+2. Create the virtual environment: `python3 -m venv .venv`.
+3. Install the dependencies: `.venv/bin/pip install -r requirements.txt`.
+4. Copy `secrets.env.example` to `secrets.env`, then fill in the required values.
+5. Configure DuckDNS and the Caddy proxy provided in `deploy/`.
+6. Start the services: `./start.sh`.
 
-PM2 démarre quatre processus :
+PM2 starts four processes:
 
-- `bot-telegram` : bot Telegram et workers ;
-- `bot-web` : administration sur le port 5000 ;
-- `bot-miniapp` : Mini App locale sur le port 5010.
-- `bot-public-tunnel` : domaine HTTPS ngrok fixe et synchronisation du bouton Telegram.
+- `bot-telegram`: Telegram bot and workers;
+- `bot-web`: administration on port 5000;
+- `bot-miniapp`: local Mini App on port 5010;
+- `bot-public-tunnel`: fixed HTTPS ngrok domain and Telegram button synchronization.
 
-La Mini App utilise l’adresse HTTPS publique définie dans `WEBAPP_URL`. Dans le déploiement actuel, elle est publiée sous `/botmailsuper/` par Caddy, qui renouvelle automatiquement le certificat TLS.
+The Mini App uses the public HTTPS address defined in `WEBAPP_URL`. In the current deployment, Caddy publishes it under `/botmailsuper/` and automatically renews the TLS certificate.
 
-En production locale, le processus `bot-public-tunnel` maintient le domaine de développement ngrok gratuit, écrit l'URL active dans `.runtime/public_url` et met à jour le bouton Telegram. Aucun domaine acheté ni port ouvert sur la box n'est nécessaire, et le domaine ngrok reste identique après un redémarrage.
+In local production, the `bot-public-tunnel` process maintains the free ngrok development domain, writes the active URL to `.runtime/public_url`, and updates the Telegram button. No purchased domain or open router port is required, and the ngrok domain remains unchanged after a restart.
 
 ## Administration
 
-Ouvrir `/login` sur le port 5000. Le premier démarrage transforme automatiquement `ADMIN_PASSWORD` en hash persistant dans SQLite. Un changement effectué dans **Settings** est durable. Les connexions sont protégées par CSRF, cookies renforcés, expiration de session et limitation des tentatives.
+Open `/login` on port 5000. On the first startup, `ADMIN_PASSWORD` is automatically converted into a persistent hash in SQLite. Changes made in **Settings** are persistent. Connections are protected by CSRF, hardened cookies, session expiration, and login-attempt rate limiting.
 
 ## Tests
 
@@ -47,6 +47,6 @@ Ouvrir `/login` sur le port 5000. Le premier démarrage transforme automatiqueme
 .venv/bin/python test_i18n.py
 ```
 
-## Données et sécurité
+## Data and security
 
-Ne jamais publier `secrets.env`, la base SQLite, les journaux, les sessions ou les jetons. Les pièces jointes restent en mémoire le temps de l’envoi et ne sont pas conservées sur disque. Les logs tournent automatiquement et masquent les adresses destinataires. L’historique de plus de 30 jours est supprimé quotidiennement lorsque `AUTO_CLEANUP_ENABLED` est actif.
+Never publish `secrets.env`, the SQLite database, logs, sessions, or tokens. Attachments remain in memory while being sent and are not stored on disk. Logs rotate automatically and mask recipient addresses. History older than 30 days is deleted daily when `AUTO_CLEANUP_ENABLED` is enabled.
