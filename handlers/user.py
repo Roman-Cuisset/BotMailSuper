@@ -4,10 +4,10 @@ from config import ADMIN_IDS, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES
 from utils.i18n import tr
 from utils.email_sender import log_action
 from utils.state import get_maintenance_mode
+from utils.webapp_url import get_webapp_url
 from database.db import get_db
 import sqlite3
 import asyncio
-import os
 from email.utils import parseaddr
 
 
@@ -106,8 +106,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += "\n\n" + tr("vip_bonuses", str(user_id))
     
     keyboard = []
-    webapp_url = os.getenv("WEBAPP_URL", "").strip()
-    if webapp_url.startswith("https://"):
+    webapp_url = get_webapp_url()
+    if webapp_url:
         keyboard.append([InlineKeyboardButton("✉️ Ouvrir la Mini App", web_app=WebAppInfo(url=webapp_url))])
     keyboard.extend([
         [InlineKeyboardButton("🕓 Historique", callback_data="home_history"), InlineKeyboardButton("👥 Contacts", callback_data="home_contacts")],

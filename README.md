@@ -19,15 +19,19 @@ L’ancienne intégration Gmail API a été supprimée. Le service utilise uniqu
 2. Créer l’environnement : `python3 -m venv .venv`.
 3. Installer les dépendances : `.venv/bin/pip install -r requirements.txt`.
 4. Copier `secrets.env.example` vers `secrets.env`, puis renseigner les valeurs.
-5. Lancer les services : `./start.sh`.
+5. Installer `cloudflared` : `mkdir -p .tools && curl -fL -o .tools/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod 755 .tools/cloudflared`.
+6. Lancer les services : `./start.sh`.
 
-PM2 démarre trois processus :
+PM2 démarre quatre processus :
 
 - `bot-telegram` : bot Telegram et workers ;
 - `bot-web` : administration sur le port 5000 ;
 - `bot-miniapp` : Mini App locale sur le port 5010.
+- `bot-public-tunnel` : tunnel HTTPS public Cloudflare et synchronisation du bouton Telegram.
 
 La Mini App exige une URL HTTPS accessible depuis le téléphone. Indiquer son URL complète, terminée par `/miniapp`, dans `WEBAPP_URL`. Le bouton Telegram est configuré automatiquement au prochain redémarrage du bot.
+
+En production locale, le processus `bot-public-tunnel` ouvre automatiquement un Cloudflare Quick Tunnel gratuit, écrit l'URL active dans `.runtime/public_url` et met à jour le bouton Telegram. Aucun domaine ni port ouvert sur la box n'est nécessaire. L'URL peut changer après un redémarrage du tunnel, mais le bouton Telegram est alors actualisé automatiquement.
 
 ## Administration
 

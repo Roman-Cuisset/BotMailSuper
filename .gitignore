@@ -61,3 +61,5 @@ Thumbs.db
 
 # Deployment
 bot_deploy.zip
+.tools/
+.runtime/

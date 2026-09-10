@@ -15,6 +15,7 @@ from utils.i18n import load_translations, tr
 from utils.email_sender import log_action
 from utils.scheduler import scheduled_email_worker
 from utils.cleanup import retention_worker
+from utils.webapp_url import get_webapp_url
 from handlers.drafts import savedraft_command, drafts_command, senddraft_command, deldraft_command
 from handlers.templates import savetemplate_command, templates_command, usetemplate_command, deltemplate_command
 from handlers.shortcuts import setquick_command, quick_command
@@ -65,8 +66,8 @@ async def post_init(application):
         BotCommand("support", "Contact support"),
     ]
     await application.bot.set_my_commands(commands)
-    webapp_url = os.getenv("WEBAPP_URL", "").strip()
-    if webapp_url.startswith("https://"):
+    webapp_url = get_webapp_url()
+    if webapp_url:
         await application.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(text="Ouvrir BotMailSuper", web_app=WebAppInfo(url=webapp_url))
         )
