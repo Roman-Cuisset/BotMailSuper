@@ -19,7 +19,7 @@ L’ancienne intégration Gmail API a été supprimée. Le service utilise uniqu
 2. Créer l’environnement : `python3 -m venv .venv`.
 3. Installer les dépendances : `.venv/bin/pip install -r requirements.txt`.
 4. Copier `secrets.env.example` vers `secrets.env`, puis renseigner les valeurs.
-5. Installer `ngrok` dans `.tools/ngrok`, créer un compte gratuit puis renseigner `NGROK_AUTHTOKEN`.
+5. Configurer DuckDNS et le proxy Caddy fourni dans `deploy/`.
 6. Lancer les services : `./start.sh`.
 
 PM2 démarre quatre processus :
@@ -29,7 +29,7 @@ PM2 démarre quatre processus :
 - `bot-miniapp` : Mini App locale sur le port 5010.
 - `bot-public-tunnel` : domaine HTTPS ngrok fixe et synchronisation du bouton Telegram.
 
-La Mini App exige une URL HTTPS accessible depuis le téléphone. Indiquer son URL complète, terminée par `/miniapp`, dans `WEBAPP_URL`. Le bouton Telegram est configuré automatiquement au prochain redémarrage du bot.
+La Mini App utilise l’adresse HTTPS publique définie dans `WEBAPP_URL`. Dans le déploiement actuel, elle est publiée sous `/botmailsuper/` par Caddy, qui renouvelle automatiquement le certificat TLS.
 
 En production locale, le processus `bot-public-tunnel` maintient le domaine de développement ngrok gratuit, écrit l'URL active dans `.runtime/public_url` et met à jour le bouton Telegram. Aucun domaine acheté ni port ouvert sur la box n'est nécessaire, et le domaine ngrok reste identique après un redémarrage.
 

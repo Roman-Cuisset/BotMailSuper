@@ -2,12 +2,11 @@ const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();
 function applyTheme(){document.documentElement.dataset.theme=tg?.colorScheme||"light"}applyTheme();tg?.onEvent?.("themeChanged",applyTheme);
 const state={contacts:[],drafts:[],history:[],user:null};
 const initData=tg?.initData||"";
-const apiParameter=new URLSearchParams(window.location.search).get("api");
-function resolveApiBase(){if(!apiParameter)return "";try{const url=new URL(apiParameter);const allowed=url.protocol==="https:"&&(url.hostname.endsWith(".ngrok-free.app")||url.hostname.endsWith(".ngrok-free.dev")||url.hostname.endsWith(".ts.net"));return allowed?url.origin:""}catch{return ""}}
-const apiBase=resolveApiBase();
+const deploymentPrefix=window.location.pathname.startsWith("/botmailsuper")?"/botmailsuper":"";
+const apiBase=`${window.location.origin}${deploymentPrefix}`;
 const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2600)}
-async function api(path,options={}){if(!apiBase)throw new Error("Serveur temporairement indisponible. Rouvrez l’app depuis le bot.");options.headers={...(options.headers||{}),Authorization:`tma ${initData}`,"ngrok-skip-browser-warning":"1"};const response=await fetch(`${apiBase}${path}`,options);const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Une erreur est survenue");return data}
+async function api(path,options={}){options.headers={...(options.headers||{}),Authorization:`tma ${initData}`};const response=await fetch(`${apiBase}${path}`,options);const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Une erreur est survenue");return data}
 function empty(label){return `<div class="card muted">${label}</div>`}
 function switchView(name){$$(`.view`).forEach(el=>el.classList.toggle("active",el.id===`${name}-view`));$$(`nav button`).forEach(el=>el.classList.toggle("active",el.dataset.view===name));window.scrollTo({top:0,behavior:"smooth"})}
 function renderContacts(filter=""){const term=filter.toLowerCase();const rows=state.contacts.filter(c=>`${c.name} ${c.email}`.toLowerCase().includes(term));$("#contacts-list").innerHTML=rows.length?rows.map(c=>`<div class="list-item"><div><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.email)}</small></div><div class="list-actions"><button class="icon-btn use-contact" data-email="${escapeHtml(c.email)}">Écrire</button><button class="icon-btn danger delete-contact" data-id="${c.id}">×</button></div></div>`).join(""):empty("Aucun contact");$("#contact-chips").innerHTML=state.contacts.slice(0,8).map(c=>`<button type="button" class="chip use-contact" data-email="${escapeHtml(c.email)}">${escapeHtml(c.name)}</button>`).join("")}

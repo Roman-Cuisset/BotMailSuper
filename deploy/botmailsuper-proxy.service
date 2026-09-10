@@ -1,0 +1,18 @@
+[Unit]
+Description=Proxy HTTPS public BotMailSuper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=/home/serveur/telegram_mail_bot
+ExecStart=/home/serveur/telegram_mail_bot/.tools/caddy run --environ --config /home/serveur/telegram_mail_bot/deploy/Caddyfile
+ExecReload=/home/serveur/telegram_mail_bot/.tools/caddy reload --config /home/serveur/telegram_mail_bot/deploy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=
+
+[Install]
+WantedBy=default.target

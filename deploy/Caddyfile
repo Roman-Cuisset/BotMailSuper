@@ -1,0 +1,25 @@
+{
+	http_port 8082
+	https_port 9443
+}
+
+serveur-asus.duckdns.org {
+	encode zstd gzip
+
+	@without_slash path /botmailsuper
+	redir @without_slash /botmailsuper/ 308
+
+	handle_path /botmailsuper/* {
+		@app_root path /
+		rewrite @app_root /miniapp
+		reverse_proxy 127.0.0.1:5010
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8081
+	}
+}
+
+http://serveur-asus.duckdns.org {
+	redir https://serveur-asus.duckdns.org:9443{uri} 308
+}

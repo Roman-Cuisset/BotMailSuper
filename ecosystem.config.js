@@ -26,14 +26,5 @@ module.exports = {
       autorestart: true,
       max_memory_restart: "200M",
     },
-    {
-      name: "bot-public-tunnel",
-      cwd: __dirname,
-      script: "scripts/public_tunnel.py",
-      interpreter: ".venv/bin/python3",
-      autorestart: true,
-      restart_delay: 5000,
-      max_memory_restart: "150M",
-    },
   ],
 };
