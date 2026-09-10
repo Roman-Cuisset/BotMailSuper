@@ -3,7 +3,7 @@ function applyTheme(){document.documentElement.dataset.theme=tg?.colorScheme||"l
 const state={contacts:[],drafts:[],history:[],user:null};
 const initData=tg?.initData||"";
 const apiParameter=new URLSearchParams(window.location.search).get("api");
-function resolveApiBase(){if(!apiParameter)return "";try{const url=new URL(apiParameter);const allowed=url.protocol==="https:"&&(url.hostname.endsWith(".trycloudflare.com")||url.hostname.endsWith(".ngrok-free.app")||url.hostname.endsWith(".ts.net"));return allowed?url.origin:""}catch{return ""}}
+function resolveApiBase(){if(!apiParameter)return "";try{const url=new URL(apiParameter);const allowed=url.protocol==="https:"&&(url.hostname.endsWith(".ngrok-free.app")||url.hostname.endsWith(".ngrok-free.dev")||url.hostname.endsWith(".ts.net"));return allowed?url.origin:""}catch{return ""}}
 const apiBase=resolveApiBase();
 const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2600)}
