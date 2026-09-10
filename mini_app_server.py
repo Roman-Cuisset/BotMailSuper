@@ -40,7 +40,9 @@ def security_headers(response):
     allowed_origin = "https://roman-cuisset.github.io"
     if request.path.startswith("/api/miniapp/") and request.headers.get("Origin") == allowed_origin:
         response.headers["Access-Control-Allow-Origin"] = allowed_origin
-        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Authorization, Content-Type, ngrok-skip-browser-warning"
+        )
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
         response.headers["Vary"] = "Origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
