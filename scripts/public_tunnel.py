@@ -145,7 +145,15 @@ def run():
     if not CLOUDFLARED.is_file():
         raise RuntimeError(f"cloudflared introuvable : {CLOUDFLARED}")
     child = subprocess.Popen(
-        [str(CLOUDFLARED), "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:5010"],
+        [
+            str(CLOUDFLARED),
+            "tunnel",
+            "--no-autoupdate",
+            "--protocol",
+            "http2",
+            "--url",
+            "http://127.0.0.1:5010",
+        ],
         cwd=ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
