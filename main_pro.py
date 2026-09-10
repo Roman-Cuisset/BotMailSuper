@@ -23,7 +23,7 @@ from handlers.html_templates import htmltemplate_command
 from handlers.vip_features import creategroup_command, addtogroup_command, groups_command, delgroup_command, schedule_command, scheduled_command, cancelschedule_command, mystats_command
 
 # Import handlers
-from handlers.user import start, help_command, history_command, cancel_command, about_command, lang_command, vip_command, myid_command, handle_message, addcontact_command, delcontact_command, contacts_command
+from handlers.user import start, help_command, history_command, cancel_command, about_command, lang_command, vip_command, myid_command, deletedata_command, handle_message, addcontact_command, delcontact_command, contacts_command
 from handlers.admin import admin_command, ban_command, unban_command, setvip_command, removevip_command, setquota_command, stats_command, maintenance_command, feedback_command, broadcast_command
 from handlers.support import support_command, reply_command
 
@@ -60,6 +60,7 @@ async def post_init(application):
         BotCommand("lang", "Change language"),
         BotCommand("vip", "VIP info"),
         BotCommand("myid", "Show your user ID"),
+        BotCommand("deletedata", "Delete all your personal data"),
         BotCommand("addcontact", "Add a contact"),
         BotCommand("delcontact", "Delete a contact"),
         BotCommand("contacts", "List or search contacts"),
@@ -72,7 +73,7 @@ async def post_init(application):
             menu_button=MenuButtonWebApp(text="Ouvrir BotMailSuper", web_app=WebAppInfo(url=webapp_url))
         )
     
-    asyncio.create_task(scheduled_email_worker())
+    asyncio.create_task(scheduled_email_worker(application.bot))
     asyncio.create_task(retention_worker())
     
     print("🤖 Bot started and ready!")
@@ -104,6 +105,7 @@ def main():
     app.add_handler(CommandHandler("lang", lang_command))
     app.add_handler(CommandHandler("vip", vip_command))
     app.add_handler(CommandHandler("myid", myid_command))
+    app.add_handler(CommandHandler("deletedata", deletedata_command))
     app.add_handler(CommandHandler("addcontact", addcontact_command))
     app.add_handler(CommandHandler("delcontact", delcontact_command))
     app.add_handler(CommandHandler("contacts", contacts_command))

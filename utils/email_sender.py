@@ -7,7 +7,9 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 from pathlib import Path
 import logging
+import html as html_lib
 from utils.crypto import decrypt_password
+from utils.html_sanitizer import sanitize_email_html
 
 # Load environment variables
 load_dotenv("secrets.env")
@@ -32,8 +34,8 @@ def render_email_html(expediteur, message_content, attachments, is_vip=False, an
     html_path = Path("receptiondesing.html")
     if not html_path.exists():
         # fallback simple
-        att_list = "<br>".join(f"- {name}" for name, _ in attachments) if attachments else "No attachment"
-        return f"<b>Sender:</b> {expediteur}<br><b>Message:</b><br>{message_content}<br><b>Attachments:</b><br>{att_list}"
+        att_list = "<br>".join(f"- {html_lib.escape(str(name))}" for name, _ in attachments) if attachments else "No attachment"
+        return f"<b>Sender:</b> {html_lib.escape(str(expediteur))}<br><b>Message:</b><br>{html_lib.escape(message_content)}<br><b>Attachments:</b><br>{att_list}"
     
     with open(html_path, encoding="utf-8") as f:
         html = f.read()
@@ -44,7 +46,7 @@ def render_email_html(expediteur, message_content, attachments, is_vip=False, an
     
     # Correction : toujours une liste <li> même si un seul fichier
     if attachments:
-        att_html = "".join(f"<li>{name}</li>" for name, _ in attachments)
+        att_html = "".join(f"<li>{html_lib.escape(str(name))}</li>" for name, _ in attachments)
     else:
         att_html = "<li>No attachment</li>"
     
@@ -52,13 +54,12 @@ def render_email_html(expediteur, message_content, attachments, is_vip=False, an
     if not message_content.strip():
         message_content = "<i>No message</i>"
     else:
-        import html as html_lib
         # Escape HTML characters to prevent injection
         message_content = html_lib.escape(message_content)
         # Replace newlines with <br>
         message_content = message_content.replace("\n", "<br>")
     
-    html = html.replace("{{expediteur}}", expediteur)
+    html = html.replace("{{expediteur}}", html_lib.escape(str(expediteur)))
     html = html.replace("{{message_content}}", message_content)
     html = html.replace("{{attachments_list}}", att_html)
     return html
@@ -123,7 +124,7 @@ def _send_email_sync(to_address, subject, body, attachments, sender_user=None, i
         
         # Prepare HTML and text bodies
         if body_is_html:
-            html_body = body
+            html_body = sanitize_email_html(body)
             text_body = "You received a message via BotMailSuper."
         else:
             # Use template

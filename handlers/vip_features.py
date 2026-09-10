@@ -7,7 +7,9 @@ from telegram.ext import ContextTypes
 from database.db import get_db
 from utils.i18n import tr
 from utils.email_sender import log_action
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+import os
 import json
 
 def check_vip(user_id):
@@ -181,13 +183,15 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Parse datetime (format: DD/MM/YYYY HH:MM)
     datetime_str = " ".join(context.args)
     try:
-        send_at = datetime.strptime(datetime_str, "%d/%m/%Y %H:%M")
+        local_tz = ZoneInfo(os.getenv("APP_TIMEZONE", "Europe/Paris"))
+        local_send_at = datetime.strptime(datetime_str, "%d/%m/%Y %H:%M").replace(tzinfo=local_tz)
+        send_at = local_send_at.astimezone(timezone.utc)
     except ValueError:
         await update.message.reply_text(tr("schedule_invalid_format", str(user_id)))
         return
     
     # Check if datetime is in the future
-    if send_at <= datetime.now():
+    if send_at <= datetime.now(timezone.utc):
         await update.message.reply_text(tr("schedule_past_time", str(user_id)))
         return
     
@@ -209,11 +213,11 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.get("email_subject", ""),
                 context.user_data.get("email_body") or context.user_data.get("text", ""),
                 attachments_json,
-                send_at
+                send_at.strftime("%Y-%m-%d %H:%M:%S")
             ))
             conn.commit()
         
-        await update.message.reply_text(tr("email_scheduled", str(user_id), time=send_at.strftime("%d/%m/%Y %H:%M")))
+        await update.message.reply_text(tr("email_scheduled", str(user_id), time=local_send_at.strftime("%d/%m/%Y %H:%M")))
         
         # Clear user data
         context.user_data.clear()

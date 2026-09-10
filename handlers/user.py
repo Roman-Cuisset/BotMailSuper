@@ -178,6 +178,19 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text(tr("my_id", str(user_id), user_id=user_id))
 
+async def deletedata_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Require an explicit second step before deleting all personal data."""
+    user_id = update.effective_user.id
+    keyboard = [[
+        InlineKeyboardButton("Supprimer définitivement", callback_data="confirm_delete_data"),
+        InlineKeyboardButton(tr("cancel_button", str(user_id)), callback_data="cancel_send"),
+    ]]
+    await update.message.reply_text(
+        "⚠️ Cette action supprimera vos contacts, brouillons, modèles, comptes SMTP, "
+        "programmations et historique. Elle est irréversible.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
 async def addcontact_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_maintenance(update, context): return
     user_id = update.effective_user.id

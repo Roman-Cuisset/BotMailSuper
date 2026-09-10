@@ -50,3 +50,7 @@ Open `/login` on port 5000. On the first startup, `ADMIN_PASSWORD` is automatica
 ## Data and security
 
 Never publish `secrets.env`, the SQLite database, logs, sessions, or tokens. Attachments remain in memory while being sent and are not stored on disk. Logs rotate automatically and mask recipient addresses. History older than 30 days is deleted daily when `AUTO_CLEANUP_ENABLED` is enabled.
+
+Set `STORE_HISTORY_CONTENT=false` to retain delivery metadata without storing message bodies or attachment names. Users can permanently remove their contacts, drafts, templates, SMTP accounts, scheduled messages, and history with `/deletedata` (a confirmation is required).
+
+Delivery requests are protected by atomic quota reservations and idempotency keys. Scheduled messages are claimed by one worker, stale claims recover automatically, and temporary SMTP failures are retried up to three times. Dates entered with `/schedule` use `APP_TIMEZONE` and are stored internally in UTC.

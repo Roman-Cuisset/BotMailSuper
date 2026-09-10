@@ -9,6 +9,7 @@ MAX_MESSAGES_PER_MINUTE = 20
 # Activer la suppression automatique de l'historique après N jours (False pour désactiver)
 AUTO_CLEANUP_ENABLED = True
 DAYS_TO_KEEP_HISTORY = 30  # Nombre de jours avant suppression
+STORE_HISTORY_CONTENT = os.getenv("STORE_HISTORY_CONTENT", "true").lower() == "true"
 
 # Telegram files are downloaded into memory before sending.
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024

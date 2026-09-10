@@ -1,7 +1,8 @@
 import sqlite3
+import os
 from contextlib import contextmanager
 
-DB_FILE = "bot.db"
+DB_FILE = os.getenv("DB_FILE", "bot.db")
 
 def init_db():
     """Initializes the database with the required tables."""
@@ -58,6 +59,10 @@ def init_db():
             ("error", "TEXT DEFAULT ''"),
             ("body", "TEXT DEFAULT ''"),
             ("attachments", "TEXT DEFAULT '[]'"),
+            ("request_key", "TEXT"),
+            ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+            # SQLite ALTER TABLE only accepts constant defaults.
+            ("updated_at", "TIMESTAMP DEFAULT ''"),
         ):
             if name not in history_columns:
                 cursor.execute(f"ALTER TABLE history ADD COLUMN {name} {definition}")
@@ -76,6 +81,13 @@ def init_db():
                 UNIQUE(user_id, name)
             )
         """)
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_history_user_request "
+            "ON history(user_id, request_key) WHERE request_key IS NOT NULL"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_user_sent_at ON history(user_id, sent_at)"
+        )
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS quick_shortcuts (
@@ -164,6 +176,19 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
         """)
+        scheduled_columns = {row[1] for row in cursor.execute("PRAGMA table_info(scheduled_emails)")}
+        for name, definition in (
+            ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("next_retry_at", "TIMESTAMP"),
+            ("processing_started_at", "TIMESTAMP"),
+            ("last_error", "TEXT DEFAULT ''"),
+        ):
+            if name not in scheduled_columns:
+                cursor.execute(f"ALTER TABLE scheduled_emails ADD COLUMN {name} {definition}")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scheduled_due "
+            "ON scheduled_emails(status, next_retry_at, send_at)"
+        )
         
         # Settings table (Global Config)
         cursor.execute("""
@@ -176,6 +201,7 @@ def init_db():
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('maintenance_mode', '0')")
         cursor.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)")
         cursor.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (2)")
+        cursor.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (3)")
         
         # User Emails table (Multi-Account) - Phase 2
         cursor.execute("""
@@ -197,9 +223,11 @@ def init_db():
 @contextmanager
 def get_db():
     """Context manager for database connection."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row  # Access columns by name
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 10000")
+    conn.execute("PRAGMA journal_mode = WAL")
     try:
         yield conn
     finally:

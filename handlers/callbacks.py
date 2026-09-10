@@ -8,7 +8,9 @@ from datetime import datetime
 from collections import defaultdict, deque
 from time import monotonic
 import json
+import uuid
 from config import MAX_MESSAGES_PER_MINUTE
+from utils.delivery import DeliveryLimitError, mark_delivery, mark_sending, reserve_delivery
 
 
 recent_sends = defaultdict(deque)
@@ -30,6 +32,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     await query.answer()
+
+    if query.data == "confirm_delete_data":
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            # History and scheduled rows predate cascading foreign keys.
+            conn.execute("DELETE FROM history WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM scheduled_emails WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+            conn.commit()
+        context.user_data.clear()
+        await query.edit_message_text("✅ Toutes vos données ont été supprimées.")
+        return
 
     if query.data == "home_history":
         with get_db() as conn:
@@ -164,38 +178,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_vip and not send_allowed(user_id):
             await query.edit_message_text("❌ Trop d'envois en une minute. Réessayez dans quelques instants.")
             return
-        if not is_vip and quota >= 0 and sent_today >= quota:
-            await query.edit_message_text(f"❌ Quota quotidien atteint ({quota} e-mails).")
-            return
-
         username = query.from_user.username or ""
         default_subject = "Message from VIP user" if is_vip else (
             f"Message from @{username}" if username else f"Message from user {user_id}"
         )
         subject = content.get("email_subject") or default_subject
+        request_key = content.setdefault("delivery_request_key", uuid.uuid4().hex)
+        try:
+            history_id, previous_status, duplicate = reserve_delivery(
+                user_id, to, subject, text, attachments, request_key
+            )
+        except DeliveryLimitError as exc:
+            await query.edit_message_text(f"❌ {exc}")
+            return
+        if duplicate and previous_status in {"queued", "sending", "accepted", "sent"}:
+            await query.edit_message_text("ℹ️ Cet envoi a déjà été pris en compte.")
+            return
+        if duplicate:  # A deliberate retry after a failed SMTP attempt.
+            request_key = uuid.uuid4().hex
+            content["delivery_request_key"] = request_key
+            history_id, _, _ = reserve_delivery(user_id, to, subject, text, attachments, request_key)
             
         await query.edit_message_text("⏳ Envoi en cours…")
+        if not mark_sending(history_id):
+            await query.edit_message_text("ℹ️ Cet envoi est déjà en cours.")
+            return
         success = await send_email_async(to, subject, text, attachments, sender_user=query.from_user, is_vip=is_vip)
+        mark_delivery(history_id, success, "SMTP failure" if not success else "")
         
         if success:
-            # Save to history
-            with get_db() as conn:
-                conn.execute("""
-                    INSERT INTO history (user_id, to_email, subject, status, error, details, body, attachments)
-                    VALUES (?, ?, ?, 'accepted', '', ?, ?, ?)
-                """, (user_id, to, subject, "Accepted by SMTP via bot", text, json.dumps([name for name, _ in attachments], ensure_ascii=False)))
-                conn.commit()
-            
             log_action("✅ Email accepted by SMTP", user_id)
             await query.edit_message_text(tr("sent_success", str(user_id), email=to))
             context.user_data.clear()
         else:
-            with get_db() as conn:
-                conn.execute("""
-                    INSERT INTO history (user_id, to_email, subject, status, error, details)
-                    VALUES (?, ?, ?, 'failed', 'SMTP failure', ?)
-                """, (user_id, to, subject, "Failed via bot"))
-                conn.commit()
             keyboard = [[
                 InlineKeyboardButton("🔄 Réessayer", callback_data="retry_send"),
                 InlineKeyboardButton(tr("cancel_button", str(user_id)), callback_data="cancel_send"),

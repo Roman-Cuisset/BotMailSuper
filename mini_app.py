@@ -18,6 +18,7 @@ from config import MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES
 from database.db import get_db
 from handlers.user import is_valid_email
 from utils.email_sender import send_email
+from utils.delivery import DeliveryLimitError, mark_delivery, mark_sending, reserve_delivery
 
 
 MAX_INIT_DATA_AGE = 24 * 60 * 60
@@ -288,6 +289,21 @@ def register_mini_app(app):
             conn.commit()
         return (jsonify(ok=True), 200) if cursor.rowcount else (jsonify(error="Brouillon introuvable"), 404)
 
+    @app.route("/api/miniapp/account", methods=["DELETE"])
+    @telegram_auth
+    def miniapp_delete_account():
+        user_id = request.telegram_user["id"]
+        confirmation = (request.get_json(silent=True) or {}).get("confirmation")
+        if confirmation != "DELETE":
+            return jsonify(error="Confirmation DELETE requise"), 400
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM history WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM scheduled_emails WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+            conn.commit()
+        return jsonify(ok=True)
+
     @app.route("/api/miniapp/send", methods=["POST"])
     @telegram_auth
     def miniapp_send():
@@ -334,7 +350,22 @@ def register_mini_app(app):
 
         sender = SimpleNamespace(id=user_id, username=telegram_user.get("username"))
         results = []
-        for recipient in recipients:
+        base_request_key = request.headers.get("Idempotency-Key", "").strip()[:120]
+        for position, recipient in enumerate(recipients):
+            request_key = f"{base_request_key}:{position}" if base_request_key else None
+            try:
+                history_id, previous_status, duplicate = reserve_delivery(
+                    user_id, recipient, subject, body, attachments, request_key
+                )
+            except DeliveryLimitError as exc:
+                results.append({"email": recipient, "status": "rejected", "error": str(exc)})
+                continue
+            if duplicate:
+                results.append({"email": recipient, "status": previous_status, "duplicate": True})
+                continue
+            if not mark_sending(history_id):
+                results.append({"email": recipient, "status": "sending", "duplicate": True})
+                continue
             success = send_email(
                 recipient,
                 subject,
@@ -344,27 +375,11 @@ def register_mini_app(app):
                 is_vip=bool(limits["is_vip"]),
                 anonymous=anonymous,
             )
-            # SMTP success only proves provider acceptance; final delivery can still bounce.
             status = "accepted" if success else "failed"
-            error = "" if success else "Échec SMTP"
-            with get_db() as conn:
-                conn.execute(
-                    """INSERT INTO history
-                       (user_id, to_email, subject, status, error, sent_at, details, body, attachments)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        user_id,
-                        recipient,
-                        subject,
-                        status,
-                        error,
-                        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                        "Accepted by SMTP via Mini App" if success else "Mini App SMTP failure",
-                        body,
-                        json.dumps([name for name, _ in attachments], ensure_ascii=False),
-                    ),
-                )
-                conn.commit()
+            mark_delivery(history_id, success, "Échec SMTP" if not success else "")
             results.append({"email": recipient, "status": status})
-        status_code = 200 if all(item["status"] == "accepted" for item in results) else 502
+        if any(item["status"] == "rejected" for item in results):
+            status_code = 429
+        else:
+            status_code = 200 if all(item["status"] in {"accepted", "sent"} or item.get("duplicate") for item in results) else 502
         return jsonify(results=results), status_code
