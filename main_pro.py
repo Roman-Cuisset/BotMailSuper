@@ -27,7 +27,7 @@ from handlers.admin import admin_command, ban_command, unban_command, setvip_com
 from handlers.support import support_command, reply_command
 
 # Load env
-load_dotenv("secrets.env")
+load_dotenv("secrets.env", override=True)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # Logging setup
