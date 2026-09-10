@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Keep a free Cloudflare Quick Tunnel alive and update Telegram automatically."""
+"""Keep the fixed free ngrok endpoint alive and update Telegram automatically."""
 
+import ipaddress
 import json
+import os
 import re
 import signal
 import subprocess
@@ -16,11 +18,11 @@ from dotenv import dotenv_values
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CLOUDFLARED = ROOT / ".tools" / "cloudflared"
+NGROK = ROOT / ".tools" / "ngrok"
 SECRETS = ROOT / "secrets.env"
 RUNTIME_DIR = ROOT / ".runtime"
 RUNTIME_URL = RUNTIME_DIR / "public_url"
-TUNNEL_PATTERN = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+TUNNEL_PATTERN = re.compile(r"https://[a-z0-9.-]+\.ngrok(?:-free)?\.(?:app|dev)")
 child = None
 
 
@@ -61,12 +63,18 @@ def public_healthcheck(url):
                 timeout=10,
                 check=True,
             )
-            addresses = [line.strip() for line in dns.stdout.splitlines() if line.strip()]
+            addresses = []
+            for line in dns.stdout.splitlines():
+                try:
+                    addresses.append(str(ipaddress.ip_address(line.strip())))
+                except ValueError:
+                    continue
             for address in addresses:
                 check = subprocess.run(
                     [
                         "curl", "--silent", "--show-error", "--max-time", "10",
                         "--resolve", f"{hostname}:443:{address}",
+                        "--header", "ngrok-skip-browser-warning: 1",
                         "--output", "/dev/null", "--write-out", "%{http_code}",
                         f"{url}/health",
                     ],
@@ -123,9 +131,9 @@ def update_telegram(webapp_url):
 
 
 def publish_url(url):
-    print(f"Tunnel Cloudflare obtenu, validation en cours : {url}", flush=True)
+    print(f"Domaine ngrok obtenu, validation en cours : {url}", flush=True)
     if not public_healthcheck(url):
-        raise RuntimeError("le tunnel Cloudflare ne répond pas au contrôle public")
+        raise RuntimeError("le domaine ngrok ne répond pas au contrôle public")
     public_frontend = dotenv_values(SECRETS).get("PUBLIC_WEBAPP_URL", "").strip().rstrip("/")
     if public_frontend.startswith("https://"):
         webapp_url = f"{public_frontend}/?api={quote(url, safe='')}"
@@ -145,19 +153,24 @@ def stop_child(signum, _frame):
 
 def run():
     global child
-    if not CLOUDFLARED.is_file():
-        raise RuntimeError(f"cloudflared introuvable : {CLOUDFLARED}")
+    if not NGROK.is_file():
+        raise RuntimeError(f"ngrok introuvable : {NGROK}")
+    authtoken = (dotenv_values(SECRETS).get("NGROK_AUTHTOKEN") or "").strip()
+    if not authtoken:
+        raise RuntimeError("NGROK_AUTHTOKEN absent de secrets.env")
+    environment = os.environ.copy()
+    environment["NGROK_AUTHTOKEN"] = authtoken
     child = subprocess.Popen(
         [
-            str(CLOUDFLARED),
-            "tunnel",
-            "--no-autoupdate",
-            "--protocol",
-            "http2",
-            "--url",
+            str(NGROK),
+            "http",
             "http://127.0.0.1:5010",
+            "--inspect=false",
+            "--log=stdout",
+            "--log-format=json",
         ],
         cwd=ROOT,
+        env=environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -172,7 +185,7 @@ def run():
                 publish_url(published)
             except Exception as error:
                 print(f"Mise à jour du tunnel impossible : {error}", file=sys.stderr, flush=True)
-        elif " ERR " in line or " WRN " in line:
+        elif '"lvl":"eror"' in line or '"lvl":"warn"' in line:
             print(line.rstrip(), flush=True)
     return child.wait()
 
