@@ -28,7 +28,7 @@ def log_action(message, user_id=None):
     prefix = f"[user_id={user_id}] " if user_id else ""
     logger.info(f"{prefix}{message}")
 
-def render_email_html(expediteur, message_content, attachments, is_vip=False):
+def render_email_html(expediteur, message_content, attachments, is_vip=False, anonymous=False):
     html_path = Path("receptiondesing.html")
     if not html_path.exists():
         # fallback simple
@@ -39,7 +39,7 @@ def render_email_html(expediteur, message_content, attachments, is_vip=False):
         html = f.read()
     
     # Pour VIP, masquer l'expéditeur si besoin
-    if is_vip:
+    if anonymous:
         expediteur = "VIP user (anonymous)"
     
     # Correction : toujours une liste <li> même si un seul fichier
@@ -63,7 +63,7 @@ def render_email_html(expediteur, message_content, attachments, is_vip=False):
     html = html.replace("{{attachments_list}}", att_html)
     return html
 
-def _send_email_sync(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None):
+def _send_email_sync(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None, anonymous=False):
     try:
         # Get signature if VIP
         signature = ""
@@ -127,7 +127,7 @@ def _send_email_sync(to_address, subject, body, attachments, sender_user=None, i
             text_body = "You received a message via BotMailSuper."
         else:
             # Use template
-            html_body = render_email_html(expediteur, body, attachments, is_vip=is_vip)
+            html_body = render_email_html(expediteur, body, attachments, is_vip=is_vip, anonymous=anonymous)
             text_body = "You received a message via BotMailSuper."
         
         # Set content
@@ -166,13 +166,13 @@ def _send_email_sync(to_address, subject, body, attachments, sender_user=None, i
         log_action(f"❌ SMTP error for {recipient_log_label(to_address)}: {e}")
         return False
 
-def send_email(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None):
+def send_email(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None, anonymous=False):
     """Synchronous entry point for WSGI workers and scripts."""
     return _send_email_sync(
-        to_address, subject, body, attachments, sender_user, is_vip, sender_name_override
+        to_address, subject, body, attachments, sender_user, is_vip, sender_name_override, anonymous
     )
 
-async def send_email_async(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None):
+async def send_email_async(to_address, subject, body, attachments, sender_user=None, is_vip=False, sender_name_override=None, anonymous=False):
     """Send outside the event loop and return the provider's real result."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
@@ -185,6 +185,7 @@ async def send_email_async(to_address, subject, body, attachments, sender_user=N
         sender_user,
         is_vip,
         sender_name_override,
+        anonymous,
     )
 
 

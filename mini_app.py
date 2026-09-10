@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl
 import hmac
 import json
 import os
+import socket
 import time
 
 from flask import jsonify, render_template, request
@@ -21,6 +22,7 @@ from utils.email_sender import send_email
 
 MAX_INIT_DATA_AGE = 24 * 60 * 60
 MAX_RECIPIENTS = 10
+VIP_MAX_RECIPIENTS = 50
 MAX_ATTACHMENTS = 10
 
 
@@ -101,10 +103,24 @@ def _user_limits(user_id):
         ).fetchone()
         sent_today = conn.execute(
             """SELECT COUNT(*) FROM history
-               WHERE user_id = ? AND status = 'sent' AND date(sent_at) = date('now')""",
+               WHERE user_id = ? AND status IN ('sent', 'accepted') AND date(sent_at) = date('now')""",
             (user_id,),
         ).fetchone()[0]
-    return dict(row) | {"sent_today": sent_today}
+    result = dict(row) | {"sent_today": sent_today}
+    # VIP is advertised by the bot as having no sending quota.
+    if result["is_vip"]:
+        result["quota"] = -1
+    return result
+
+
+def _domain_resolves(address):
+    """Reject obviously impossible domains before SMTP accepts and later bounces them."""
+    domain = address.rsplit("@", 1)[-1]
+    try:
+        socket.getaddrinfo(domain, 25, type=socket.SOCK_STREAM)
+        return True
+    except (socket.gaierror, UnicodeError):
+        return False
 
 
 def _serialize_rows(rows):
@@ -133,7 +149,7 @@ def register_mini_app(app):
                 (user_id,),
             ).fetchall()
             history = conn.execute(
-                """SELECT id, to_email, subject, status, error, sent_at FROM history
+                """SELECT id, to_email, subject, status, error, sent_at, body, attachments FROM history
                    WHERE user_id = ? ORDER BY id DESC LIMIT 50""",
                 (user_id,),
             ).fetchall()
@@ -142,6 +158,9 @@ def register_mini_app(app):
                    WHERE user_id = ? ORDER BY is_primary DESC, id""",
                 (user_id,),
             ).fetchall()
+            language_row = conn.execute(
+                "SELECT lang FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
         limits = _user_limits(user_id)
         return jsonify(
             user=telegram_user,
@@ -151,7 +170,21 @@ def register_mini_app(app):
             accounts=_serialize_rows(accounts),
             quota={"limit": limits["quota"], "used": limits["sent_today"]},
             is_vip=bool(limits["is_vip"]),
+            lang=language_row["lang"] if language_row else "en",
         )
+
+    @app.route("/api/miniapp/language", methods=["PUT"])
+    @telegram_auth
+    def miniapp_language():
+        user_id = request.telegram_user["id"]
+        _ensure_user(request.telegram_user)
+        lang = str((request.get_json(silent=True) or {}).get("lang", ""))
+        if lang not in {"en", "fr", "ru"}:
+            return jsonify(error="Unsupported language"), 400
+        with get_db() as conn:
+            conn.execute("UPDATE users SET lang = ? WHERE user_id = ?", (lang, user_id))
+            conn.commit()
+        return jsonify(lang=lang)
 
     @app.route("/api/miniapp/contacts", methods=["POST"])
     @telegram_auth
@@ -186,6 +219,32 @@ def register_mini_app(app):
             )
             conn.commit()
         return (jsonify(ok=True), 200) if cursor.rowcount else (jsonify(error="Contact introuvable"), 404)
+
+    @app.route("/api/miniapp/contacts/<int:contact_id>", methods=["PUT"])
+    @telegram_auth
+    def miniapp_update_contact(contact_id):
+        user_id = request.telegram_user["id"]
+        payload = request.get_json(silent=True) or {}
+        name = str(payload.get("name", "")).strip()[:80]
+        email = str(payload.get("email", "")).strip().lower()
+        if not name or not is_valid_email(email):
+            return jsonify(error="Nom ou adresse e-mail invalide"), 400
+        try:
+            with get_db() as conn:
+                cursor = conn.execute(
+                    "UPDATE contacts SET name = ?, email = ? WHERE id = ? AND user_id = ?",
+                    (name, email, contact_id, user_id),
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT id, name, email FROM contacts WHERE id = ? AND user_id = ?",
+                    (contact_id, user_id),
+                ).fetchone()
+        except Exception as exc:
+            if "UNIQUE constraint" in str(exc):
+                return jsonify(error="Un contact porte déjà ce nom"), 409
+            raise
+        return jsonify(contact=dict(row)) if cursor.rowcount else (jsonify(error="Contact introuvable"), 404)
 
     @app.route("/api/miniapp/drafts", methods=["POST"])
     @telegram_auth
@@ -244,14 +303,20 @@ def register_mini_app(app):
             for item in request.form.get("recipients", "").replace(";", ",").split(",")
             if item.strip()
         ]
-        if not recipients or len(recipients) > MAX_RECIPIENTS or any(not is_valid_email(item) for item in recipients):
-            return jsonify(error=f"Indiquez entre 1 et {MAX_RECIPIENTS} adresses valides"), 400
+        recipient_limit = VIP_MAX_RECIPIENTS if limits["is_vip"] else MAX_RECIPIENTS
+        if not recipients or len(recipients) > recipient_limit or any(not is_valid_email(item) for item in recipients):
+            return jsonify(error=f"Indiquez entre 1 et {recipient_limit} adresses valides"), 400
+        invalid_domains = [item for item in recipients if not _domain_resolves(item)]
+        if invalid_domains:
+            return jsonify(error=f"Domaine e-mail introuvable : {invalid_domains[0].rsplit('@', 1)[1]}"), 400
         if limits["quota"] >= 0 and limits["sent_today"] + len(recipients) > limits["quota"]:
             return jsonify(error="Quota quotidien insuffisant pour cet envoi"), 429
 
         subject = request.form.get("subject", "").strip()[:200] or "Message via BotMailSuper"
         body = request.form.get("body", "")[:50000]
-        files = request.files.getlist("attachments")
+        anonymous = bool(limits["is_vip"] and request.form.get("anonymous") == "true")
+        # Browsers may submit an empty file part even when no file was chosen.
+        files = [item for item in request.files.getlist("attachments") if item and item.filename]
         if len(files) > MAX_ATTACHMENTS:
             return jsonify(error=f"{MAX_ATTACHMENTS} pièces jointes maximum"), 400
 
@@ -277,14 +342,16 @@ def register_mini_app(app):
                 attachments,
                 sender_user=sender,
                 is_vip=bool(limits["is_vip"]),
+                anonymous=anonymous,
             )
-            status = "sent" if success else "failed"
+            # SMTP success only proves provider acceptance; final delivery can still bounce.
+            status = "accepted" if success else "failed"
             error = "" if success else "Échec SMTP"
             with get_db() as conn:
                 conn.execute(
                     """INSERT INTO history
-                       (user_id, to_email, subject, status, error, sent_at, details)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (user_id, to_email, subject, status, error, sent_at, details, body, attachments)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         user_id,
                         recipient,
@@ -292,10 +359,12 @@ def register_mini_app(app):
                         status,
                         error,
                         datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                        "Sent via Mini App" if success else "Mini App SMTP failure",
+                        "Accepted by SMTP via Mini App" if success else "Mini App SMTP failure",
+                        body,
+                        json.dumps([name for name, _ in attachments], ensure_ascii=False),
                     ),
                 )
                 conn.commit()
             results.append({"email": recipient, "status": status})
-        status_code = 200 if all(item["status"] == "sent" for item in results) else 502
+        status_code = 200 if all(item["status"] == "accepted" for item in results) else 502
         return jsonify(results=results), status_code

@@ -43,7 +43,7 @@ def security_headers(response):
         response.headers["Access-Control-Allow-Headers"] = (
             "Authorization, Content-Type, ngrok-skip-browser-warning"
         )
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Vary"] = "Origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"

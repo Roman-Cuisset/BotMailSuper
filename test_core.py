@@ -70,14 +70,34 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         draft_id = response.get_json()["draft"]["id"]
 
-        with patch("mini_app.send_email", return_value=True):
+        with patch("mini_app._domain_resolves", return_value=True), patch("mini_app.send_email", return_value=True):
             response = self.client.post(
                 "/api/miniapp/send",
                 data={"recipients": "alice@example.com", "subject": "Bonjour", "body": "Message"},
                 headers=self.headers,
             )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["results"][0]["status"], "sent")
+        self.assertEqual(response.get_json()["results"][0]["status"], "accepted")
+
+        response = self.client.put(
+            f"/api/miniapp/contacts/{contact_id}",
+            json={"name": "Alice Martin", "email": "alice.martin@example.com"},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["contact"]["name"], "Alice Martin")
+
+        response = self.client.put(
+            "/api/miniapp/language", json={"lang": "ru"}, headers=self.headers
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get("/api/miniapp/bootstrap", headers=self.headers).get_json()["lang"], "ru")
+
+        with database.get_db() as conn:
+            row = conn.execute("SELECT body, attachments, status FROM history ORDER BY id DESC").fetchone()
+        self.assertEqual(row["body"], "Message")
+        self.assertEqual(row["attachments"], "[]")
+        self.assertEqual(row["status"], "accepted")
 
         self.assertEqual(self.client.delete(f"/api/miniapp/contacts/{contact_id}", headers=self.headers).status_code, 200)
         self.assertEqual(self.client.delete(f"/api/miniapp/drafts/{draft_id}", headers=self.headers).status_code, 200)

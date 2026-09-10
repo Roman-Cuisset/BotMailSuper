@@ -56,6 +56,8 @@ def init_db():
             ("subject", "TEXT DEFAULT ''"),
             ("status", "TEXT NOT NULL DEFAULT 'sent'"),
             ("error", "TEXT DEFAULT ''"),
+            ("body", "TEXT DEFAULT ''"),
+            ("attachments", "TEXT DEFAULT '[]'"),
         ):
             if name not in history_columns:
                 cursor.execute(f"ALTER TABLE history ADD COLUMN {name} {definition}")

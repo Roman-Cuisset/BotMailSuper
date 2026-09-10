@@ -7,6 +7,7 @@ from database.db import get_db
 from datetime import datetime
 from collections import defaultdict, deque
 from time import monotonic
+import json
 from config import MAX_MESSAGES_PER_MINUTE
 
 
@@ -152,19 +153,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Enforce both the per-minute abuse limit and the configured daily user quota.
-        if not send_allowed(user_id):
-            await query.edit_message_text("❌ Trop d'envois en une minute. Réessayez dans quelques instants.")
-            return
-
         with get_db() as conn:
             row = conn.execute("SELECT is_vip, quota FROM users WHERE user_id = ?", (user_id,)).fetchone()
             is_vip = row['is_vip'] if row else False
             quota = row['quota'] if row else 20
             sent_today = conn.execute(
-                "SELECT COUNT(*) FROM history WHERE user_id = ? AND date(sent_at) = date('now')",
+                "SELECT COUNT(*) FROM history WHERE user_id = ? AND status IN ('sent', 'accepted') AND date(sent_at) = date('now')",
                 (user_id,),
             ).fetchone()[0]
-        if quota >= 0 and sent_today >= quota:
+        if not is_vip and not send_allowed(user_id):
+            await query.edit_message_text("❌ Trop d'envois en une minute. Réessayez dans quelques instants.")
+            return
+        if not is_vip and quota >= 0 and sent_today >= quota:
             await query.edit_message_text(f"❌ Quota quotidien atteint ({quota} e-mails).")
             return
 
@@ -181,9 +181,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Save to history
             with get_db() as conn:
                 conn.execute("""
-                    INSERT INTO history (user_id, to_email, subject, status, error, details)
-                    VALUES (?, ?, ?, 'sent', '', ?)
-                """, (user_id, to, subject, "Sent via bot"))
+                    INSERT INTO history (user_id, to_email, subject, status, error, details, body, attachments)
+                    VALUES (?, ?, ?, 'accepted', '', ?, ?, ?)
+                """, (user_id, to, subject, "Accepted by SMTP via bot", text, json.dumps([name for name, _ in attachments], ensure_ascii=False)))
                 conn.commit()
             
             log_action("✅ Email accepted by SMTP", user_id)

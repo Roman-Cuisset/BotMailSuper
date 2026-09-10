@@ -125,7 +125,7 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     with get_db() as conn:
         history = conn.execute("""
-            SELECT to_email, sent_at FROM history 
+            SELECT to_email, subject, status, sent_at FROM history
             WHERE user_id = ? 
             ORDER BY sent_at DESC LIMIT 5
         """, (user_id,)).fetchall()
@@ -134,7 +134,7 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(tr("no_history_user", str(user_id)))
         return
 
-    msg = "\n\n".join([f"📤 {h['sent_at']}\nTo: {h['to_email']}" for h in history])
+    msg = "\n\n".join([f"{'❌' if h['status'] == 'failed' else '📨'} {h['sent_at']}\nTo: {h['to_email']}\n{h['subject'] or '—'}" for h in history])
     await update.message.reply_text(tr("history_header", str(user_id)) + msg)
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

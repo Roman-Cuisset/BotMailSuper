@@ -1,34 +1,35 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>BotMailSuper</title>
-    <link rel="stylesheet" href="static/css/miniapp.css?v=4">
+    <title>Bot Mail Super</title>
+    <link rel="stylesheet" href="static/css/miniapp.css?v=7">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <header class="topbar">
-        <div class="brand"><img src="logo" alt="Logo BotMailSuper"><div><strong>BotMailSuper</strong><span id="welcome">Prêt à envoyer</span></div></div>
-        <div class="quota"><span>Quota</span><strong id="quota">— / —</strong></div>
+        <div class="brand"><div class="brand-mark" aria-hidden="true">✉</div><div><strong>Bot Mail Super <span id="vip-star" class="vip-star" hidden>★ VIP</span></strong><span id="welcome">Prêt à envoyer</span></div></div>
+        <div class="quota"><span data-i18n="quota">Quota</span><strong id="quota">— / —</strong></div>
     </header>
 
     <main>
         <section class="view active" id="compose-view">
             <div class="page-heading"><div class="heading-icon">✦</div><div><span>Nouveau message</span><h1>Composer</h1></div></div>
             <form id="compose-form" class="card">
-                <label>Destinataire(s)<div class="input-shell"><span>À</span><input id="recipients" name="recipients" type="text" autocomplete="email" placeholder="nom@exemple.com" required></div></label>
+                <label><span data-i18n="recipients">Destinataire(s)</span><div class="input-shell"><span data-i18n="to">À</span><input id="recipients" name="recipients" type="text" autocomplete="email" placeholder="nom@exemple.com" data-i18n-placeholder="emailPlaceholder" required></div></label>
                 <div id="contact-chips" class="chips"></div>
-                <label>Sujet<div class="input-shell"><span>Objet</span><input id="subject" name="subject" type="text" maxlength="200" placeholder="De quoi s’agit-il ?"></div></label>
-                <label>Message<textarea id="body" name="body" rows="8" maxlength="50000" placeholder="Écrivez votre message…"></textarea></label>
+                <label><span data-i18n="subject">Sujet</span><div class="input-shell"><span data-i18n="subjectShort">Objet</span><input id="subject" name="subject" type="text" maxlength="200" placeholder="De quoi s’agit-il ?" data-i18n-placeholder="subjectPlaceholder"></div></label>
+                <label><span data-i18n="message">Message</span><textarea id="body" name="body" rows="8" maxlength="50000" placeholder="Écrivez votre message…" data-i18n-placeholder="messagePlaceholder"></textarea></label>
                 <label class="file-label"><span class="file-copy"><b>Ajouter des fichiers</b><small>10 fichiers · 25 Mo maximum</small></span><span class="file-button">＋ Choisir</span><input id="attachments" name="attachments" type="file" multiple></label>
                 <div id="file-list" class="muted"></div>
+                <label id="anonymous-option" class="toggle-row" hidden><input id="anonymous" name="anonymous" type="checkbox" value="true"><span class="toggle"></span><span data-i18n="anonymous">Envoyer anonymement</span></label>
                 <div class="actions"><button type="button" class="secondary" id="save-draft">Enregistrer</button><button type="submit" class="primary" id="send-button"><span>Envoyer</span><b>↗</b></button></div>
             </form>
         </section>
 
         <section class="view" id="contacts-view">
-            <div class="section-title"><div><span>Carnet d’adresses</span><h2>Contacts</h2></div><button class="round" id="new-contact" aria-label="Ajouter un contact">＋</button></div>
+            <div class="section-title"><div><span>Carnet d’adresses</span><h2>Contacts</h2></div><button class="round" id="new-contact" aria-label="Ajouter un contact" data-i18n-aria="addContact">＋</button></div>
             <input class="search" id="contact-search" placeholder="Rechercher un contact">
             <div id="contacts-list" class="list"></div>
         </section>
@@ -45,9 +46,10 @@
 
         <section class="view" id="account-view">
             <div class="section-title"><div><span>Profil et envoi</span><h2>Compte</h2></div></div>
-            <div class="card account-card"><div class="avatar" id="avatar">B</div><div><strong id="account-name">Telegram</strong><p id="account-id"></p></div></div>
-            <div class="card setting-card"><span class="setting-icon">✉</span><div><h3>Expéditeur SMTP</h3><div id="accounts-list" class="muted">Chargement…</div></div></div>
-            <div class="card setting-card"><span class="setting-icon">⌁</span><div><h3>Limites d’envoi</h3><p>10 destinataires, 10 fichiers, 20 Mo par fichier et 25 Mo au total.</p></div></div>
+            <div class="card account-card"><div class="avatar" id="avatar">B</div><div><strong id="account-name">Telegram</strong><p id="account-id"></p><span id="vip-account" class="vip-account" hidden>★ VIP</span></div></div>
+            <label class="card language-card"><span class="setting-icon">文</span><div><h3 id="language-title">Langue</h3><select id="language-select"><option value="en">English</option><option value="fr">Français</option><option value="ru">Русский</option></select></div></label>
+            <div class="card setting-card"><span class="setting-icon">✉</span><div><h3 data-i18n="smtp">Expéditeur SMTP</h3><div id="accounts-list" class="muted">Chargement…</div></div></div>
+            <div class="card setting-card"><span class="setting-icon limits-icon">10+</span><div><h3 data-i18n="limits">Limites d’envoi</h3><p id="limits-copy" data-i18n="limitsText">10 destinataires, 10 fichiers, 20 Mo par fichier et 25 Mo au total.</p></div></div>
         </section>
     </main>
 
@@ -59,9 +61,10 @@
         <button data-view="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Compte</span></button>
     </nav>
 
-    <dialog id="contact-dialog"><form id="contact-form" method="dialog"><h3>Nouveau contact</h3><label>Nom<input name="name" maxlength="80" required></label><label>E-mail<input name="email" type="email" required></label><div class="actions"><button type="button" class="secondary close-dialog">Annuler</button><button class="primary" value="save">Enregistrer</button></div></form></dialog>
-    <dialog id="draft-dialog"><form id="draft-form" method="dialog"><h3>Nom du brouillon</h3><label>Nom<input name="name" maxlength="80" required></label><div class="actions"><button type="button" class="secondary close-dialog">Annuler</button><button class="primary" value="save">Enregistrer</button></div></form></dialog>
+    <dialog id="contact-dialog"><form id="contact-form" method="dialog"><input name="id" type="hidden"><h3 id="contact-dialog-title">Nouveau contact</h3><label><span data-i18n="name">Nom</span><input name="name" maxlength="80" required></label><label><span data-i18n="email">E-mail</span><input name="email" type="email" required></label><div class="actions"><button type="button" class="secondary close-dialog" data-i18n="cancel">Annuler</button><button class="primary" value="save" data-i18n="save">Enregistrer</button></div></form></dialog>
+    <dialog id="draft-dialog"><form id="draft-form" method="dialog"><h3 data-i18n="draftName">Nom du brouillon</h3><label><span data-i18n="name">Nom</span><input name="name" maxlength="80" required></label><div class="actions"><button type="button" class="secondary close-dialog" data-i18n="cancel">Annuler</button><button class="primary" value="save" data-i18n="save">Enregistrer</button></div></form></dialog>
+    <dialog id="history-dialog"><div class="dialog-content"><h3 id="history-title"></h3><p id="history-meta"></p><pre id="history-body"></pre><div id="history-attachments"></div><button type="button" class="secondary close-dialog" data-i18n="close">Fermer</button></div></dialog>
     <div id="toast" role="status"></div>
-    <script src="static/js/miniapp.js?v=4"></script>
+    <script src="static/js/miniapp.js?v=7"></script>
 </body>
 </html>
